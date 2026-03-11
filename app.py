@@ -1,16 +1,10 @@
 import os
 import random
-import warnings
 
 import gradio as gr
 import torch
+from diffusers import Flux2KleinPipeline
 from dotenv import load_dotenv
-
-with warnings.catch_warnings():
-    warnings.filterwarnings(
-        "ignore", message=".*CUDA is not available.*Disabling autocast.*"
-    )
-    from diffusers import Flux2KleinPipeline
 
 load_dotenv()
 
@@ -37,15 +31,12 @@ def _get_pipe():
 
     device, dtype = _detect_device()
 
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", message=".*add_prefix_space.*")
-        warnings.filterwarnings("ignore", message=".*torch_dtype.*is deprecated.*")
-        _pipe = Flux2KleinPipeline.from_pretrained(
-            "black-forest-labs/FLUX.2-klein-4B",
-            torch_dtype=dtype,
-            use_safetensors=True,
-            token=hf_token,
-        )
+    _pipe = Flux2KleinPipeline.from_pretrained(
+        "black-forest-labs/FLUX.2-klein-4B",
+        torch_dtype=dtype,
+        use_safetensors=True,
+        token=hf_token,
+    )
     if device == "cuda":
         _pipe.enable_model_cpu_offload()
     else:
