@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Single-file Gradio web application that generates images from text prompts using the Stable Diffusion 3.5 Medium model (2.6B parameters) via Hugging Face Diffusers.
+Single-file Gradio web application that generates images from text prompts using the [FLUX.2 Klein](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) model (4B parameters) from Black Forest Labs via Hugging Face Diffusers.
 
 ## Setup
 
@@ -12,7 +12,7 @@ Single-file Gradio web application that generates images from text prompts using
 uv sync
 ```
 
-**Prerequisites:** Accept the [Stable Diffusion 3.5 Medium license](https://huggingface.co/stabilityai/stable-diffusion-3.5-medium) on Hugging Face, then create a `.env` file with `HF_TOKEN=<your-read-access-token>`.
+No license acceptance is required — FLUX.2 Klein is Apache 2.0 licensed. Optionally create a `.env` file with `HF_TOKEN=<your-token>` for authenticated Hugging Face access.
 
 ## Running
 
@@ -24,8 +24,8 @@ uv run python app.py
 
 Everything lives in `app.py`, structured in three sections:
 
-1. **Model initialization** — `_detect_device()` selects hardware (MPS > CUDA > CPU) and dtype (float16 for MPS/CPU, bfloat16 for CUDA). `_get_pipe()` lazily loads the pipeline on first inference, moves it to the detected device, and enables attention slicing. HF_TOKEN is loaded from `.env` at import time.
-2. **Inference** — `infer()` takes prompt, negative prompt, seed, dimensions (512-1440px), guidance scale, and inference steps. Calls `_get_pipe()`, runs inference under `torch.inference_mode()` with a CPU-pinned generator for MPS compatibility. Returns a PIL Image and the seed used.
+1. **Model initialization** — `_detect_device()` selects hardware (MPS > CUDA > CPU). All devices use bfloat16 to match the model's native dtype. `_get_pipe()` lazily loads the pipeline on first inference. On CUDA, it uses `enable_model_cpu_offload()` to reduce VRAM usage; on MPS/CPU, it uses `pipe.to(device)`.
+2. **Inference** — `infer()` takes prompt, seed, dimensions (512-1440px), guidance scale (default 1.0), and inference steps (default 4). FLUX.2 Klein does not support negative prompts. Runs under `torch.inference_mode()` with a CPU-pinned generator for MPS compatibility. Returns a PIL Image and the seed used.
 3. **UI** — Text input, run button, image output, and an accordion with advanced settings. Inference triggers on button click or prompt submission.
 
 ## Commands
@@ -42,8 +42,10 @@ uv run pytest tests/test_app.py  # Run a single test file
 
 ## Gotchas
 
-- **`from_pretrained` requires `torch_dtype`, not `dtype`.** A sub-component warns that `torch_dtype` is deprecated, but the `StableDiffusion3Pipeline.from_pretrained` API still requires it. Passing `dtype` causes it to be silently ignored.
-- **Use `pipe.to(device)`, not `device_map=`.** `device_map` probes CUDA even on MPS/CPU machines, causing spurious warnings. `pipe.to(device)` is the standard diffusers approach for single-device setups.
-- **Do not remove the `warnings.catch_warnings()` blocks.** The block around the diffusers import suppresses a Kandinsky5 `torch.autocast(device_type="cuda")` warning that fires at import time on non-CUDA machines. The block in `_get_pipe()` suppresses the T5 tokenizer `add_prefix_space` warning and the `torch_dtype` deprecation warning.
-- **SD3 does not support `enable_vae_slicing()` or `enable_vae_tiling()`.** These methods exist on other pipelines (e.g., SDXL) but not `StableDiffusion3Pipeline`. Only `enable_attention_slicing()` is available.
-- **Do not pin `sentencepiece==0.1.99`.** That version has no pre-built wheel for macOS ARM64 and requires `cmake` to build from source. The current unpinned version works with the warning suppression in place.
+- **`from_pretrained` requires `torch_dtype`, not `dtype`.** The `Flux2KleinPipeline.from_pretrained` API requires `torch_dtype`. Passing `dtype` causes it to be silently ignored.
+- **On CUDA, use `enable_model_cpu_offload()` instead of `pipe.to(device)`.** This offloads model components to CPU when not in use, reducing VRAM requirements (~13GB). On MPS/CPU, use `pipe.to(device)` since CPU offload is CUDA-only.
+- **Do not remove the `warnings.catch_warnings()` blocks.** The block around the diffusers import suppresses a `torch.autocast(device_type="cuda")` warning on non-CUDA machines. The block in `_get_pipe()` suppresses the T5 tokenizer `add_prefix_space` and `torch_dtype` deprecation warnings.
+- **FLUX.2 Klein does not support negative prompts.** The FLUX pipeline does not accept a `negative_prompt` parameter.
+- **The generator is pinned to CPU, not the inference device.** The model card example uses `torch.Generator(device="cuda")`, but we use `device="cpu"` for cross-device compatibility. MPS generators have known reliability issues, and CPU generators produce equivalent results across all backends.
+- **Do not pin `sentencepiece==0.1.99`.** That version has no pre-built wheel for macOS ARM64. The current unpinned version works.
+- **diffusers is installed from git.** `Flux2KleinPipeline` requires the latest diffusers from the main branch. The lockfile pins the exact commit for reproducibility. Switch to a PyPI release once `Flux2KleinPipeline` ships in a stable version.
