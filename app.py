@@ -10,7 +10,7 @@ with warnings.catch_warnings():
     warnings.filterwarnings(
         "ignore", message=".*CUDA is not available.*Disabling autocast.*"
     )
-    from diffusers import StableDiffusion3Pipeline
+    from diffusers import Flux2KleinPipeline
 
 load_dotenv()
 
@@ -24,10 +24,10 @@ _pipe = None
 
 def _detect_device():
     if torch.backends.mps.is_available():
-        return "mps", torch.float16
+        return "mps", torch.bfloat16
     if torch.cuda.is_available():
         return "cuda", torch.bfloat16
-    return "cpu", torch.float16
+    return "cpu", torch.bfloat16
 
 
 def _get_pipe():
@@ -40,26 +40,27 @@ def _get_pipe():
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message=".*add_prefix_space.*")
         warnings.filterwarnings("ignore", message=".*torch_dtype.*is deprecated.*")
-        _pipe = StableDiffusion3Pipeline.from_pretrained(
-            "stabilityai/stable-diffusion-3.5-medium",
+        _pipe = Flux2KleinPipeline.from_pretrained(
+            "black-forest-labs/FLUX.2-klein-4B",
             torch_dtype=dtype,
             use_safetensors=True,
             token=hf_token,
         )
-    _pipe.to(device)
-    _pipe.enable_attention_slicing()
+    if device == "cuda":
+        _pipe.enable_model_cpu_offload()
+    else:
+        _pipe.to(device)
     return _pipe
 
 
 def infer(
     prompt,
-    negative_prompt="",
     seed=42,
     randomize_seed=False,
     width=1024,
     height=1024,
-    guidance_scale=4.5,
-    num_inference_steps=40,
+    guidance_scale=1.0,
+    num_inference_steps=4,
 ):
     if randomize_seed:
         seed = random.randint(0, MAX_SEED)
@@ -70,7 +71,6 @@ def infer(
     with torch.inference_mode():
         image = pipe(
             prompt=prompt,
-            negative_prompt=negative_prompt,
             guidance_scale=guidance_scale,
             num_inference_steps=num_inference_steps,
             width=width,
@@ -84,7 +84,7 @@ def infer(
 with gr.Blocks() as demo:
     with gr.Column(elem_id="col-container"):
         gr.Markdown(
-            " # [Stable Diffusion 3.5 Medium (2.6B)](https://huggingface.co/stabilityai/stable-diffusion-3.5-medium)"
+            " # [FLUX.2 Klein (4B)](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B)"
         )
         with gr.Row():
             prompt = gr.Text(
@@ -100,13 +100,6 @@ with gr.Blocks() as demo:
         result = gr.Image(label="Result", show_label=False)
 
         with gr.Accordion("Advanced Settings", open=False):
-            negative_prompt = gr.Text(
-                label="Negative prompt",
-                max_lines=1,
-                placeholder="Enter a negative prompt",
-                visible=False,
-            )
-
             seed = gr.Slider(
                 label="Seed",
                 minimum=0,
@@ -138,17 +131,17 @@ with gr.Blocks() as demo:
                 guidance_scale = gr.Slider(
                     label="Guidance scale",
                     minimum=0.0,
-                    maximum=7.5,
+                    maximum=5.0,
                     step=0.1,
-                    value=4.5,
+                    value=1.0,
                 )
 
                 num_inference_steps = gr.Slider(
                     label="Number of inference steps",
                     minimum=1,
-                    maximum=50,
+                    maximum=20,
                     step=1,
-                    value=40,
+                    value=4,
                 )
 
         gr.Examples(
@@ -162,7 +155,6 @@ with gr.Blocks() as demo:
         fn=infer,
         inputs=[
             prompt,
-            negative_prompt,
             seed,
             randomize_seed,
             width,

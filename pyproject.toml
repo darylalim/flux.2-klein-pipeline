@@ -4,7 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "accelerate",
-    "diffusers",
+    "diffusers @ git+https://github.com/huggingface/diffusers.git",
     "gradio",
     "python-dotenv",
     "sentencepiece",
@@ -14,7 +14,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pytest",
     "ruff",
     "ty",
-    "pytest",
 ]
