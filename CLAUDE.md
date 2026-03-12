@@ -43,13 +43,21 @@ uv run pytest tests/test_streamlit_app.py  # Run a single test file
 
 ## Gotchas
 
+### Diffusers / FLUX.2 Klein
+
 - **`from_pretrained` requires `torch_dtype`, not `dtype`.** The `Flux2KleinPipeline.from_pretrained` API requires `torch_dtype`. Passing `dtype` causes it to be silently ignored. The `torch_dtype` deprecation warning originated from transformers, not diffusers — diffusers handles the translation internally as of the fix in huggingface/diffusers#12841.
 - **On CUDA, use `enable_model_cpu_offload()` instead of `pipe.to(device)`.** This offloads model components to CPU when not in use, reducing VRAM requirements (~13GB). On MPS/CPU, use `pipe.to(device)` since CPU offload is CUDA-only.
 - **FLUX.2 Klein does not support negative prompts.** The FLUX pipeline does not accept a `negative_prompt` parameter.
-- **The generator is pinned to CPU, not the inference device.** The model card example uses `torch.Generator(device="cuda")`, but we use `device="cpu"` for cross-device compatibility. MPS generators have known reliability issues, and CPU generators produce equivalent results across all backends.
-- **Do not pin `sentencepiece==0.1.99`.** That version has no pre-built wheel for macOS ARM64. The current unpinned version works.
 - **diffusers is installed from git.** `Flux2KleinPipeline` requires the latest diffusers from the main branch. The lockfile pins the exact commit for reproducibility. Switch to a PyPI release once `Flux2KleinPipeline` ships in a stable version.
+
+### Transformers / SmolLM2
+
 - **SmolLM2-Instruct requires the chat message format.** Use `messages=[{"role": "system", ...}, {"role": "user", ...}]` with `transformers.pipeline`, not raw text. The response is structured as `[{"generated_text": [{"role": "assistant", "content": "..."}]}]`.
 - **`transformers.pipeline` uses `dtype`, not `torch_dtype`.** The `transformers` library has deprecated `torch_dtype` in favor of `dtype`. This is the opposite of diffusers, which requires `torch_dtype`.
 - **Use `GenerationConfig` instead of loose generation kwargs.** Passing `max_new_tokens`, `do_sample`, etc. as keyword arguments alongside a model's built-in `generation_config` is deprecated. Wrap them in a `GenerationConfig` object instead.
+
+### General
+
+- **The generator is pinned to CPU, not the inference device.** The model card example uses `torch.Generator(device="cuda")`, but we use `device="cpu"` for cross-device compatibility. MPS generators have known reliability issues, and CPU generators produce equivalent results across all backends.
+- **Do not pin `sentencepiece==0.1.99`.** That version has no pre-built wheel for macOS ARM64. The current unpinned version works.
 - **Both models share memory.** FLUX.2 Klein (~8GB) and SmolLM2-1.7B (~3.4GB) in bfloat16 require ~11.4GB combined. The LLM is loaded lazily — it only consumes memory after the user clicks "Enhance Prompt".
