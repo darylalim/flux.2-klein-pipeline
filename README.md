@@ -1,4 +1,4 @@
-# Text to Image Pipeline
+# FLUX.2 Klein Pipeline
 
 Generate images from text prompts with the [FLUX.2 Klein (4B)](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) model from Black Forest Labs. Includes optional prompt enhancement using [SmolLM2-1.7B-Instruct](https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct).
 

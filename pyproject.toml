@@ -1,5 +1,5 @@
 [project]
-name = "text-to-image-pipeline"
+name = "flux2-klein-pipeline"
 version = "0.1.0"
 description = "Generate images from text prompts with FLUX.2 Klein and optional prompt enhancement via SmolLM2"
 requires-python = ">=3.12"
