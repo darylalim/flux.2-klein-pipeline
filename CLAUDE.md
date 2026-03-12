@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Single-file Gradio web application that generates images from text prompts using the [FLUX.2 Klein](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) model (4B parameters) from Black Forest Labs via Hugging Face Diffusers.
+Single-file Streamlit web application that generates images from text prompts using the [FLUX.2 Klein](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) model (4B parameters) from Black Forest Labs via Hugging Face Diffusers.
 
 ## Setup
 
@@ -17,16 +17,16 @@ No license acceptance is required — FLUX.2 Klein is Apache 2.0 licensed. Optio
 ## Running
 
 ```bash
-uv run python app.py
+uv run streamlit run streamlit_app.py
 ```
 
 ## Architecture
 
-Everything lives in `app.py`, structured in three sections:
+Everything lives in `streamlit_app.py`, structured in three sections:
 
-1. **Model initialization** — `_detect_device()` selects hardware (MPS > CUDA > CPU). All devices use bfloat16 to match the model's native dtype. `_get_pipe()` lazily loads the pipeline on first inference. On CUDA, it uses `enable_model_cpu_offload()` to reduce VRAM usage; on MPS/CPU, it uses `pipe.to(device)`.
+1. **Model initialization** — `_detect_device()` selects hardware (MPS > CUDA > CPU). All devices use bfloat16 to match the model's native dtype. `_get_pipe()` loads the pipeline once via `@st.cache_resource`. On CUDA, it uses `enable_model_cpu_offload()` to reduce VRAM usage; on MPS/CPU, it uses `pipe.to(device)`.
 2. **Inference** — `infer()` takes prompt, seed, dimensions (512-1440px), guidance scale (default 1.0), and inference steps (default 4). FLUX.2 Klein does not support negative prompts. Runs under `torch.inference_mode()` with a CPU-pinned generator for MPS compatibility. Returns a PIL Image and the seed used.
-3. **UI** — Text input, run button, image output, and an accordion with advanced settings. Inference triggers on button click or prompt submission.
+3. **UI** — Streamlit interface behind `if __name__ == "__main__"` with text input, run button, image output, and an expander with advanced settings. Inference triggers on button click.
 
 ## Commands
 
@@ -37,7 +37,7 @@ uv run ruff format .             # Format
 uv run ruff format --check .     # Check formatting only
 uv run ty check .                # Type check
 uv run pytest                    # Run all tests
-uv run pytest tests/test_app.py  # Run a single test file
+uv run pytest tests/test_streamlit_app.py  # Run a single test file
 ```
 
 ## Gotchas

@@ -8,7 +8,7 @@ Generate images from text prompts with the [FLUX.2 Klein (4B)](https://huggingfa
 
 1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/)
 2. Install dependencies: `uv sync`
-3. Run the application: `uv run python app.py`
+3. Run the application: `uv run streamlit run streamlit_app.py`
 
 ## Testing
 
