@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Single-file Streamlit web application that generates images from text prompts using the [FLUX.2 Klein](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) model (4B parameters) from Black Forest Labs via Hugging Face Diffusers.
+Single-file Streamlit web application that generates images from text prompts using the [FLUX.2 Klein](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) model (4B parameters) from Black Forest Labs via Hugging Face Diffusers. Includes optional prompt upsampling using [SmolLM2-1.7B-Instruct](https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct) to enhance prompts before generation.
 
 ## Setup
 
@@ -50,4 +50,6 @@ uv run pytest tests/test_streamlit_app.py  # Run a single test file
 - **Do not pin `sentencepiece==0.1.99`.** That version has no pre-built wheel for macOS ARM64. The current unpinned version works.
 - **diffusers is installed from git.** `Flux2KleinPipeline` requires the latest diffusers from the main branch. The lockfile pins the exact commit for reproducibility. Switch to a PyPI release once `Flux2KleinPipeline` ships in a stable version.
 - **SmolLM2-Instruct requires the chat message format.** Use `messages=[{"role": "system", ...}, {"role": "user", ...}]` with `transformers.pipeline`, not raw text. The response is structured as `[{"generated_text": [{"role": "assistant", "content": "..."}]}]`.
+- **`transformers.pipeline` uses `dtype`, not `torch_dtype`.** The `transformers` library has deprecated `torch_dtype` in favor of `dtype`. This is the opposite of diffusers, which requires `torch_dtype`.
+- **Use `GenerationConfig` instead of loose generation kwargs.** Passing `max_new_tokens`, `do_sample`, etc. as keyword arguments alongside a model's built-in `generation_config` is deprecated. Wrap them in a `GenerationConfig` object instead.
 - **Both models share memory.** FLUX.2 Klein (~8GB) and SmolLM2-1.7B (~3.4GB) in bfloat16 require ~11.4GB combined. The LLM is loaded lazily — it only consumes memory after the user clicks "Enhance Prompt".
