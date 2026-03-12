@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "accelerate",
     "diffusers @ git+https://github.com/huggingface/diffusers.git",
-    "gradio",
+    "streamlit",
     "python-dotenv",
     "sentencepiece",
     "torch",
