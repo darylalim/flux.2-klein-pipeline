@@ -12,15 +12,18 @@ def _make_mock_pipe():
     return pipe
 
 
-def _reload_app(mock_pipe, *, mps_available=False, cuda_available=False):
+def _reload_app(mock_pipe, *, mock_llm=None, mps_available=False, cuda_available=False):
     """Reload app module with mocked heavy dependencies and passthrough cache."""
     with (
         patch("diffusers.Flux2KleinPipeline") as mock_cls,
+        patch("transformers.pipeline") as mock_tp,
         patch("torch.backends.mps.is_available", return_value=mps_available),
         patch("torch.cuda.is_available", return_value=cuda_available),
         patch("streamlit.cache_resource", lambda f: f),
     ):
         mock_cls.from_pretrained.return_value = mock_pipe
+        if mock_llm is not None:
+            mock_tp.return_value = mock_llm
         import streamlit_app
 
         importlib.reload(streamlit_app)
