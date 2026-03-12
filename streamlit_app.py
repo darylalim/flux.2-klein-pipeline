@@ -5,6 +5,7 @@ import streamlit as st
 import torch
 from diffusers import Flux2KleinPipeline
 from dotenv import load_dotenv
+from transformers import pipeline as transformers_pipeline
 
 load_dotenv()
 
@@ -37,6 +38,18 @@ def _get_pipe():
     else:
         pipe.to(device)
     return pipe
+
+
+@st.cache_resource
+def _get_llm():
+    device, dtype = _detect_device()
+
+    return transformers_pipeline(
+        "text-generation",
+        model="HuggingFaceTB/SmolLM2-1.7B-Instruct",
+        torch_dtype=dtype,
+        device=device,
+    )
 
 
 def infer(

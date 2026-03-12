@@ -5,6 +5,15 @@ import torch
 from PIL import Image
 
 
+def _make_mock_llm():
+    """Create a mock text-generation pipeline."""
+    llm = MagicMock()
+    llm.return_value = [
+        {"generated_text": [{"role": "assistant", "content": "enhanced prompt"}]}
+    ]
+    return llm
+
+
 def _make_mock_pipe():
     """Create a mock diffusion pipeline that returns a dummy image."""
     pipe = MagicMock()
@@ -282,6 +291,66 @@ class TestInfer:
             mock_cm.__enter__.assert_called_once()
 
 
+class TestLLMInit:
+    def test_llm_loads_correct_model(self):
+        mock_pipe = _make_mock_pipe()
+        mock_llm = _make_mock_llm()
+        streamlit_app, _ = _reload_app(mock_pipe, mock_llm=mock_llm)
+        with (
+            patch("streamlit_app.transformers_pipeline") as mock_tp,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_tp.return_value = mock_llm
+            streamlit_app._get_llm()
+            mock_tp.assert_called_once_with(
+                "text-generation",
+                model="HuggingFaceTB/SmolLM2-1.7B-Instruct",
+                torch_dtype=torch.bfloat16,
+                device="cpu",
+            )
+
+    def test_llm_device_mps(self):
+        mock_pipe = _make_mock_pipe()
+        mock_llm = _make_mock_llm()
+        streamlit_app, _ = _reload_app(
+            mock_pipe, mock_llm=mock_llm, mps_available=True
+        )
+        with (
+            patch("streamlit_app.transformers_pipeline") as mock_tp,
+            patch("torch.backends.mps.is_available", return_value=True),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_tp.return_value = mock_llm
+            streamlit_app._get_llm()
+            mock_tp.assert_called_once_with(
+                "text-generation",
+                model="HuggingFaceTB/SmolLM2-1.7B-Instruct",
+                torch_dtype=torch.bfloat16,
+                device="mps",
+            )
+
+    def test_llm_device_cuda(self):
+        mock_pipe = _make_mock_pipe()
+        mock_llm = _make_mock_llm()
+        streamlit_app, _ = _reload_app(
+            mock_pipe, mock_llm=mock_llm, cuda_available=True
+        )
+        with (
+            patch("streamlit_app.transformers_pipeline") as mock_tp,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=True),
+        ):
+            mock_tp.return_value = mock_llm
+            streamlit_app._get_llm()
+            mock_tp.assert_called_once_with(
+                "text-generation",
+                model="HuggingFaceTB/SmolLM2-1.7B-Instruct",
+                torch_dtype=torch.bfloat16,
+                device="cuda",
+            )
+
+
 class TestStreamlitApp:
     def test_get_pipe_uses_cache_resource(self):
         """Verify _get_pipe is decorated with @st.cache_resource (not passthrough)."""
@@ -294,6 +363,19 @@ class TestStreamlitApp:
 
             importlib.reload(streamlit_app)
             assert hasattr(streamlit_app._get_pipe, "clear")
+
+    def test_get_llm_uses_cache_resource(self):
+        """Verify _get_llm is decorated with @st.cache_resource (not passthrough)."""
+        with (
+            patch("diffusers.Flux2KleinPipeline"),
+            patch("transformers.pipeline"),
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            import streamlit_app
+
+            importlib.reload(streamlit_app)
+            assert hasattr(streamlit_app._get_llm, "clear")
 
     def test_no_pipe_global(self):
         import streamlit_app
