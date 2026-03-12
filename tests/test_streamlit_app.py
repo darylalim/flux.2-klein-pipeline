@@ -1,7 +1,6 @@
 import importlib
 from unittest.mock import ANY, MagicMock, patch
 
-import gradio as gr
 import torch
 from PIL import Image
 
@@ -14,181 +13,159 @@ def _make_mock_pipe():
 
 
 def _reload_app(mock_pipe, *, mps_available=False, cuda_available=False):
-    """Reload app module with mocked heavy dependencies and cleared pipe cache."""
+    """Reload app module with mocked heavy dependencies and passthrough cache."""
     with (
         patch("diffusers.Flux2KleinPipeline") as mock_cls,
         patch("torch.backends.mps.is_available", return_value=mps_available),
         patch("torch.cuda.is_available", return_value=cuda_available),
+        patch("streamlit.cache_resource", lambda f: f),
     ):
         mock_cls.from_pretrained.return_value = mock_pipe
-        import app
+        import streamlit_app
 
-        importlib.reload(app)
-        # Clear the lazy-loaded cache so _get_pipe() re-runs
-        app._pipe = None
-        return app, mock_cls
+        importlib.reload(streamlit_app)
+        return streamlit_app, mock_cls
 
 
 class TestConstants:
     def test_max_seed(self):
-        import app
+        import streamlit_app
 
-        assert app.MAX_SEED == 2_147_483_647
+        assert streamlit_app.MAX_SEED == 2_147_483_647
 
     def test_max_image_size(self):
-        import app
+        import streamlit_app
 
-        assert app.MAX_IMAGE_SIZE == 1440
+        assert streamlit_app.MAX_IMAGE_SIZE == 1440
 
 
 class TestDetectDevice:
     def test_mps_when_available(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe, mps_available=True)
         with (
             patch("torch.backends.mps.is_available", return_value=True),
             patch("torch.cuda.is_available", return_value=False),
         ):
-            import app
-
-            importlib.reload(app)
-            device, dtype = app._detect_device()
+            device, dtype = streamlit_app._detect_device()
             assert device == "mps"
             assert dtype is torch.bfloat16
 
     def test_cuda_when_mps_unavailable(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe, cuda_available=True)
         with (
             patch("torch.backends.mps.is_available", return_value=False),
             patch("torch.cuda.is_available", return_value=True),
         ):
-            import app
-
-            importlib.reload(app)
-            device, dtype = app._detect_device()
+            device, dtype = streamlit_app._detect_device()
             assert device == "cuda"
             assert dtype is torch.bfloat16
 
     def test_cpu_fallback(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
         with (
             patch("torch.backends.mps.is_available", return_value=False),
             patch("torch.cuda.is_available", return_value=False),
         ):
-            import app
-
-            importlib.reload(app)
-            device, dtype = app._detect_device()
+            device, dtype = streamlit_app._detect_device()
             assert device == "cpu"
             assert dtype is torch.bfloat16
 
     def test_mps_priority_over_cuda(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(
+            mock_pipe, mps_available=True, cuda_available=True
+        )
         with (
             patch("torch.backends.mps.is_available", return_value=True),
             patch("torch.cuda.is_available", return_value=True),
         ):
-            import app
-
-            importlib.reload(app)
-            device, _ = app._detect_device()
+            device, _ = streamlit_app._detect_device()
             assert device == "mps"
 
 
 class TestPipelineInit:
     def test_from_pretrained_args(self):
         mock_pipe = _make_mock_pipe()
-        app, mock_cls = _reload_app(mock_pipe)
+        streamlit_app, mock_cls = _reload_app(mock_pipe)
         with (
-            patch("app.Flux2KleinPipeline") as mock_cls2,
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls2,
             patch("torch.backends.mps.is_available", return_value=False),
             patch("torch.cuda.is_available", return_value=False),
         ):
             mock_cls2.from_pretrained.return_value = mock_pipe
-            app._pipe = None
-            app._get_pipe()
+            streamlit_app._get_pipe()
             mock_cls2.from_pretrained.assert_called_once_with(
                 "black-forest-labs/FLUX.2-klein-4B",
                 torch_dtype=torch.bfloat16,
                 use_safetensors=True,
-                token=app.hf_token,
+                token=streamlit_app.hf_token,
             )
 
     def test_pipeline_moved_to_device(self):
         mock_pipe = _make_mock_pipe()
-        app, _ = _reload_app(mock_pipe)
+        streamlit_app, _ = _reload_app(mock_pipe)
         with (
-            patch("app.Flux2KleinPipeline") as mock_cls,
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
             patch("torch.backends.mps.is_available", return_value=False),
             patch("torch.cuda.is_available", return_value=False),
         ):
             mock_cls.from_pretrained.return_value = mock_pipe
-            app._pipe = None
-            app._get_pipe()
+            streamlit_app._get_pipe()
             mock_pipe.to.assert_called_with("cpu")
 
     def test_pipeline_moved_to_mps_device(self):
         mock_pipe = _make_mock_pipe()
-        app, _ = _reload_app(mock_pipe)
+        streamlit_app, _ = _reload_app(mock_pipe)
         with (
-            patch("app.Flux2KleinPipeline") as mock_cls,
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
             patch("torch.backends.mps.is_available", return_value=True),
             patch("torch.cuda.is_available", return_value=False),
         ):
             mock_cls.from_pretrained.return_value = mock_pipe
-            app._pipe = None
-            app._get_pipe()
+            streamlit_app._get_pipe()
             mock_pipe.to.assert_called_with("mps")
 
     def test_cpu_offload_on_cuda(self):
         mock_pipe = _make_mock_pipe()
-        app, _ = _reload_app(mock_pipe)
+        streamlit_app, _ = _reload_app(mock_pipe)
         with (
-            patch("app.Flux2KleinPipeline") as mock_cls,
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
             patch("torch.backends.mps.is_available", return_value=False),
             patch("torch.cuda.is_available", return_value=True),
         ):
             mock_cls.from_pretrained.return_value = mock_pipe
-            app._pipe = None
-            app._get_pipe()
+            streamlit_app._get_pipe()
             mock_pipe.enable_model_cpu_offload.assert_called()
             mock_pipe.to.assert_not_called()
-
-    def test_caches_pipe(self):
-        mock_pipe = _make_mock_pipe()
-        app, _ = _reload_app(mock_pipe)
-        with (
-            patch("app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
-            app._pipe = None
-            pipe1 = app._get_pipe()
-            pipe2 = app._get_pipe()
-            assert pipe1 is pipe2
-            mock_cls.from_pretrained.assert_called_once()
 
 
 class TestInfer:
     def test_returns_image_and_seed(self):
         mock_pipe = _make_mock_pipe()
-        app, _ = _reload_app(mock_pipe)
+        streamlit_app, _ = _reload_app(mock_pipe)
         with (
-            patch("app.Flux2KleinPipeline") as mock_cls,
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
             patch("torch.backends.mps.is_available", return_value=False),
             patch("torch.cuda.is_available", return_value=False),
         ):
             mock_cls.from_pretrained.return_value = mock_pipe
-            image, seed = app.infer("a cat", seed=42)
+            image, seed = streamlit_app.infer("a cat", seed=42)
             assert isinstance(image, Image.Image)
             assert seed == 42
 
     def test_forwards_args_to_pipeline(self):
         mock_pipe = _make_mock_pipe()
-        app, _ = _reload_app(mock_pipe)
+        streamlit_app, _ = _reload_app(mock_pipe)
         with (
-            patch("app.Flux2KleinPipeline") as mock_cls,
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
             patch("torch.backends.mps.is_available", return_value=False),
             patch("torch.cuda.is_available", return_value=False),
         ):
             mock_cls.from_pretrained.return_value = mock_pipe
-            app.infer(
+            streamlit_app.infer(
                 "a cat",
                 seed=123,
                 width=768,
@@ -207,33 +184,33 @@ class TestInfer:
 
     def test_fixed_seed(self):
         mock_pipe = _make_mock_pipe()
-        app, _ = _reload_app(mock_pipe)
+        streamlit_app, _ = _reload_app(mock_pipe)
         with (
-            patch("app.Flux2KleinPipeline") as mock_cls,
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
             patch("torch.backends.mps.is_available", return_value=False),
             patch("torch.cuda.is_available", return_value=False),
         ):
             mock_cls.from_pretrained.return_value = mock_pipe
-            _, seed = app.infer("a cat", seed=99, randomize_seed=False)
+            _, seed = streamlit_app.infer("a cat", seed=99, randomize_seed=False)
             assert seed == 99
 
     def test_randomized_seed(self):
         mock_pipe = _make_mock_pipe()
-        app, _ = _reload_app(mock_pipe)
+        streamlit_app, _ = _reload_app(mock_pipe)
         with (
-            patch("app.Flux2KleinPipeline") as mock_cls,
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
             patch("torch.backends.mps.is_available", return_value=False),
             patch("torch.cuda.is_available", return_value=False),
         ):
             mock_cls.from_pretrained.return_value = mock_pipe
-            _, seed = app.infer("a cat", seed=42, randomize_seed=True)
-            assert 0 <= seed <= app.MAX_SEED
+            _, seed = streamlit_app.infer("a cat", seed=42, randomize_seed=True)
+            assert 0 <= seed <= streamlit_app.MAX_SEED
 
     def test_generator_uses_cpu(self):
         mock_pipe = _make_mock_pipe()
-        app, _ = _reload_app(mock_pipe)
+        streamlit_app, _ = _reload_app(mock_pipe)
         with (
-            patch("app.Flux2KleinPipeline") as mock_cls,
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
             patch("torch.backends.mps.is_available", return_value=False),
             patch("torch.cuda.is_available", return_value=False),
             patch("torch.Generator") as mock_gen_cls,
@@ -242,20 +219,20 @@ class TestInfer:
             mock_gen = MagicMock()
             mock_gen.manual_seed.return_value = mock_gen
             mock_gen_cls.return_value = mock_gen
-            app.infer("a cat", seed=42)
+            streamlit_app.infer("a cat", seed=42)
             mock_gen_cls.assert_called_once_with(device="cpu")
             mock_gen.manual_seed.assert_called_once_with(42)
 
     def test_default_params(self):
         mock_pipe = _make_mock_pipe()
-        app, _ = _reload_app(mock_pipe)
+        streamlit_app, _ = _reload_app(mock_pipe)
         with (
-            patch("app.Flux2KleinPipeline") as mock_cls,
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
             patch("torch.backends.mps.is_available", return_value=False),
             patch("torch.cuda.is_available", return_value=False),
         ):
             mock_cls.from_pretrained.return_value = mock_pipe
-            app.infer("a cat")
+            streamlit_app.infer("a cat")
             mock_pipe.assert_called_once_with(
                 prompt="a cat",
                 guidance_scale=1.0,
@@ -267,14 +244,14 @@ class TestInfer:
 
     def test_empty_prompt(self):
         mock_pipe = _make_mock_pipe()
-        app, _ = _reload_app(mock_pipe)
+        streamlit_app, _ = _reload_app(mock_pipe)
         with (
-            patch("app.Flux2KleinPipeline") as mock_cls,
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
             patch("torch.backends.mps.is_available", return_value=False),
             patch("torch.cuda.is_available", return_value=False),
         ):
             mock_cls.from_pretrained.return_value = mock_pipe
-            image, seed = app.infer("", seed=42)
+            image, seed = streamlit_app.infer("", seed=42)
             assert isinstance(image, Image.Image)
             mock_pipe.assert_called_once_with(
                 prompt="",
@@ -287,9 +264,9 @@ class TestInfer:
 
     def test_uses_inference_mode(self):
         mock_pipe = _make_mock_pipe()
-        app, _ = _reload_app(mock_pipe)
+        streamlit_app, _ = _reload_app(mock_pipe)
         with (
-            patch("app.Flux2KleinPipeline") as mock_cls,
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
             patch("torch.backends.mps.is_available", return_value=False),
             patch("torch.cuda.is_available", return_value=False),
             patch("torch.inference_mode") as mock_inference_mode,
@@ -297,13 +274,37 @@ class TestInfer:
             mock_cls.from_pretrained.return_value = mock_pipe
             mock_cm = MagicMock()
             mock_inference_mode.return_value = mock_cm
-            app.infer("a cat", seed=42)
+            streamlit_app.infer("a cat", seed=42)
             mock_inference_mode.assert_called_once()
             mock_cm.__enter__.assert_called_once()
 
 
-class TestGradioUI:
-    def test_demo_is_blocks_instance(self):
+class TestStreamlitApp:
+    def test_get_pipe_uses_cache_resource(self):
+        """Verify _get_pipe is decorated with @st.cache_resource (not passthrough)."""
+        with (
+            patch("diffusers.Flux2KleinPipeline"),
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            import streamlit_app
+
+            importlib.reload(streamlit_app)
+            assert hasattr(streamlit_app._get_pipe, "clear")
+
+    def test_no_pipe_global(self):
+        import streamlit_app
+
+        assert not hasattr(streamlit_app, "_pipe")
+
+    def test_ui_not_executed_on_import(self):
         mock_pipe = _make_mock_pipe()
-        app, _ = _reload_app(mock_pipe)
-        assert isinstance(app.demo, gr.Blocks)
+        with (
+            patch("streamlit.markdown") as mock_markdown,
+            patch("streamlit.text_input") as mock_text_input,
+            patch("streamlit.button") as mock_button,
+        ):
+            _reload_app(mock_pipe)
+            mock_markdown.assert_not_called()
+            mock_text_input.assert_not_called()
+            mock_button.assert_not_called()
