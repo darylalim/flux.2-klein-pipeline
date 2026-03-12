@@ -1,6 +1,5 @@
 .DS_Store
 .env
-.gradio/
 .pytest_cache/
 .ruff_cache/
 .venv/
