@@ -14,6 +14,9 @@ hf_token = os.getenv("HF_TOKEN")
 MAX_SEED = 2_147_483_647
 MAX_IMAGE_SIZE = 1440
 
+REPO_ID_DISTILLED = "black-forest-labs/FLUX.2-klein-4B"
+REPO_ID_BASE = "black-forest-labs/FLUX.2-klein-base-4B"
+
 
 def _detect_device():
     if torch.backends.mps.is_available():
@@ -23,12 +26,11 @@ def _detect_device():
     return "cpu", torch.bfloat16
 
 
-@st.cache_resource
-def _get_pipe():
+def _load_pipe(repo_id):
     device, dtype = _detect_device()
 
     pipe = Flux2KleinPipeline.from_pretrained(
-        "black-forest-labs/FLUX.2-klein-4B",
+        repo_id,
         torch_dtype=dtype,
         use_safetensors=True,
         token=hf_token,
@@ -38,6 +40,25 @@ def _get_pipe():
     else:
         pipe.to(device)
     return pipe
+
+
+@st.cache_resource
+def _get_pipe_distilled():
+    return _load_pipe(REPO_ID_DISTILLED)
+
+
+@st.cache_resource
+def _get_pipe_base():
+    return _load_pipe(REPO_ID_BASE)
+
+
+PIPES = {
+    "Distilled (4 steps)": _get_pipe_distilled,
+    "Base (50 steps)": _get_pipe_base,
+}
+
+DEFAULT_STEPS = {"Distilled (4 steps)": 4, "Base (50 steps)": 50}
+DEFAULT_CFG = {"Distilled (4 steps)": 1.0, "Base (50 steps)": 4.0}
 
 
 @st.cache_resource
@@ -88,24 +109,36 @@ def infer(
     randomize_seed=False,
     width=1024,
     height=1024,
-    guidance_scale=1.0,
-    num_inference_steps=4,
+    guidance_scale=None,
+    num_inference_steps=None,
+    mode="Distilled (4 steps)",
+    image_list=None,
 ):
+    if guidance_scale is None:
+        guidance_scale = DEFAULT_CFG[mode]
+    if num_inference_steps is None:
+        num_inference_steps = DEFAULT_STEPS[mode]
+
     if randomize_seed:
         seed = random.randint(0, MAX_SEED)
 
-    pipe = _get_pipe()
+    pipe = PIPES[mode]()
     generator = torch.Generator(device="cpu").manual_seed(seed)
 
+    pipe_kwargs = {
+        "prompt": prompt,
+        "guidance_scale": guidance_scale,
+        "num_inference_steps": num_inference_steps,
+        "width": width,
+        "height": height,
+        "generator": generator,
+    }
+
+    if image_list is not None:
+        pipe_kwargs["image"] = image_list
+
     with torch.inference_mode():
-        image = pipe(
-            prompt=prompt,
-            guidance_scale=guidance_scale,
-            num_inference_steps=num_inference_steps,
-            width=width,
-            height=height,
-            generator=generator,
-        ).images[0]
+        image = pipe(**pipe_kwargs).images[0]
 
     return image, seed
 

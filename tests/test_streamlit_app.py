@@ -50,6 +50,32 @@ class TestConstants:
 
         assert streamlit_app.MAX_IMAGE_SIZE == 1440
 
+    def test_repo_id_distilled(self):
+        import streamlit_app
+
+        assert streamlit_app.REPO_ID_DISTILLED == "black-forest-labs/FLUX.2-klein-4B"
+
+    def test_repo_id_base(self):
+        import streamlit_app
+
+        assert streamlit_app.REPO_ID_BASE == "black-forest-labs/FLUX.2-klein-base-4B"
+
+    def test_default_steps(self):
+        import streamlit_app
+
+        assert streamlit_app.DEFAULT_STEPS == {
+            "Distilled (4 steps)": 4,
+            "Base (50 steps)": 50,
+        }
+
+    def test_default_cfg(self):
+        import streamlit_app
+
+        assert streamlit_app.DEFAULT_CFG == {
+            "Distilled (4 steps)": 1.0,
+            "Base (50 steps)": 4.0,
+        }
+
 
 class TestDetectDevice:
     def test_mps_when_available(self):
@@ -98,19 +124,36 @@ class TestDetectDevice:
             assert device == "mps"
 
 
-class TestPipelineInit:
-    def test_from_pretrained_args(self):
+class TestPipelineLoading:
+    def test_distilled_from_pretrained_args(self):
         mock_pipe = _make_mock_pipe()
-        streamlit_app, mock_cls = _reload_app(mock_pipe)
+        streamlit_app, _ = _reload_app(mock_pipe)
         with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls2,
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
             patch("torch.backends.mps.is_available", return_value=False),
             patch("torch.cuda.is_available", return_value=False),
         ):
-            mock_cls2.from_pretrained.return_value = mock_pipe
-            streamlit_app._get_pipe()
-            mock_cls2.from_pretrained.assert_called_once_with(
+            mock_cls.from_pretrained.return_value = mock_pipe
+            streamlit_app._get_pipe_distilled()
+            mock_cls.from_pretrained.assert_called_once_with(
                 "black-forest-labs/FLUX.2-klein-4B",
+                torch_dtype=torch.bfloat16,
+                use_safetensors=True,
+                token=streamlit_app.hf_token,
+            )
+
+    def test_base_from_pretrained_args(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
+        with (
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_cls.from_pretrained.return_value = mock_pipe
+            streamlit_app._get_pipe_base()
+            mock_cls.from_pretrained.assert_called_once_with(
+                "black-forest-labs/FLUX.2-klein-base-4B",
                 torch_dtype=torch.bfloat16,
                 use_safetensors=True,
                 token=streamlit_app.hf_token,
@@ -125,7 +168,7 @@ class TestPipelineInit:
             patch("torch.cuda.is_available", return_value=False),
         ):
             mock_cls.from_pretrained.return_value = mock_pipe
-            streamlit_app._get_pipe()
+            streamlit_app._get_pipe_distilled()
             mock_pipe.to.assert_called_with("cpu")
 
     def test_pipeline_moved_to_mps_device(self):
@@ -137,7 +180,7 @@ class TestPipelineInit:
             patch("torch.cuda.is_available", return_value=False),
         ):
             mock_cls.from_pretrained.return_value = mock_pipe
-            streamlit_app._get_pipe()
+            streamlit_app._get_pipe_distilled()
             mock_pipe.to.assert_called_with("mps")
 
     def test_cpu_offload_on_cuda(self):
@@ -149,7 +192,7 @@ class TestPipelineInit:
             patch("torch.cuda.is_available", return_value=True),
         ):
             mock_cls.from_pretrained.return_value = mock_pipe
-            streamlit_app._get_pipe()
+            streamlit_app._get_pipe_distilled()
             mock_pipe.enable_model_cpu_offload.assert_called()
             mock_pipe.to.assert_not_called()
 
@@ -289,6 +332,128 @@ class TestInfer:
             streamlit_app.infer("a cat", seed=42)
             mock_inference_mode.assert_called_once()
             mock_cm.__enter__.assert_called_once()
+
+    def test_mode_selects_distilled_pipeline(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
+        with (
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_cls.from_pretrained.return_value = mock_pipe
+            streamlit_app.infer("a cat", mode="Distilled (4 steps)")
+            mock_cls.from_pretrained.assert_called_with(
+                "black-forest-labs/FLUX.2-klein-4B",
+                torch_dtype=torch.bfloat16,
+                use_safetensors=True,
+                token=streamlit_app.hf_token,
+            )
+
+    def test_mode_selects_base_pipeline(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
+        with (
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_cls.from_pretrained.return_value = mock_pipe
+            streamlit_app.infer("a cat", mode="Base (50 steps)")
+            mock_cls.from_pretrained.assert_called_with(
+                "black-forest-labs/FLUX.2-klein-base-4B",
+                torch_dtype=torch.bfloat16,
+                use_safetensors=True,
+                token=streamlit_app.hf_token,
+            )
+
+    def test_base_mode_default_steps_and_cfg(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
+        with (
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_cls.from_pretrained.return_value = mock_pipe
+            streamlit_app.infer("a cat", mode="Base (50 steps)")
+            mock_pipe.assert_called_once_with(
+                prompt="a cat",
+                guidance_scale=4.0,
+                num_inference_steps=50,
+                width=1024,
+                height=1024,
+                generator=ANY,
+            )
+
+    def test_explicit_params_override_mode_defaults(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
+        with (
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_cls.from_pretrained.return_value = mock_pipe
+            streamlit_app.infer(
+                "a cat",
+                mode="Base (50 steps)",
+                guidance_scale=2.0,
+                num_inference_steps=10,
+            )
+            mock_pipe.assert_called_once_with(
+                prompt="a cat",
+                guidance_scale=2.0,
+                num_inference_steps=10,
+                width=1024,
+                height=1024,
+                generator=ANY,
+            )
+
+    def test_partial_override_steps_only(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
+        with (
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_cls.from_pretrained.return_value = mock_pipe
+            streamlit_app.infer(
+                "a cat",
+                mode="Base (50 steps)",
+                num_inference_steps=10,
+            )
+            call_kwargs = mock_pipe.call_args[1]
+            assert call_kwargs["num_inference_steps"] == 10
+            assert call_kwargs["guidance_scale"] == 4.0
+
+    def test_image_list_passed_to_pipeline(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
+        images = [Image.new("RGB", (64, 64)), Image.new("RGB", (64, 64))]
+        with (
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_cls.from_pretrained.return_value = mock_pipe
+            streamlit_app.infer("edit this", image_list=images)
+            call_kwargs = mock_pipe.call_args[1]
+            assert call_kwargs["image"] is images
+
+    def test_no_image_key_when_none(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
+        with (
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_cls.from_pretrained.return_value = mock_pipe
+            streamlit_app.infer("a cat")
+            call_kwargs = mock_pipe.call_args[1]
+            assert "image" not in call_kwargs
 
 
 class TestLLMInit:
@@ -473,8 +638,8 @@ class TestUpsamplePrompt:
 
 
 class TestStreamlitApp:
-    def test_get_pipe_uses_cache_resource(self):
-        """Verify _get_pipe is decorated with @st.cache_resource (not passthrough)."""
+    def test_get_pipe_distilled_uses_cache_resource(self):
+        """Verify _get_pipe_distilled is decorated with @st.cache_resource."""
         with (
             patch("diffusers.Flux2KleinPipeline"),
             patch("transformers.pipeline"),
@@ -484,7 +649,20 @@ class TestStreamlitApp:
             import streamlit_app
 
             importlib.reload(streamlit_app)
-            assert hasattr(streamlit_app._get_pipe, "clear")
+            assert hasattr(streamlit_app._get_pipe_distilled, "clear")
+
+    def test_get_pipe_base_uses_cache_resource(self):
+        """Verify _get_pipe_base is decorated with @st.cache_resource."""
+        with (
+            patch("diffusers.Flux2KleinPipeline"),
+            patch("transformers.pipeline"),
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            import streamlit_app
+
+            importlib.reload(streamlit_app)
+            assert hasattr(streamlit_app._get_pipe_base, "clear")
 
     def test_get_llm_uses_cache_resource(self):
         """Verify _get_llm is decorated with @st.cache_resource (not passthrough)."""
