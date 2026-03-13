@@ -98,8 +98,8 @@ UPSAMPLE_PROMPT_WITH_IMAGES = (
 
 1. Title
 2. Prompt text input
-3. Enhance Prompt button + enhanced prompt text area (unchanged)
-4. Image uploader (new) — `st.file_uploader` with `accept_multiple_files=True`
+3. Image uploader (new) — `st.file_uploader` with `accept_multiple_files=True` (placed before Enhance Prompt so `uploaded_files` is available for `has_images`)
+4. Enhance Prompt button + enhanced prompt text area
 5. Mode radio (new) — "Distilled (4 steps)" / "Base (50 steps)"
 6. Advanced Settings expander — seed, dimensions, guidance scale, inference steps
 7. Run button + result display
