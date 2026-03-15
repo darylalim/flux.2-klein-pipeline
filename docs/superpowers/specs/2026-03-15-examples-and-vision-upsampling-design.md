@@ -50,8 +50,7 @@ messages = [
     {
         "role": "user",
         "content": [
-            {"type": "image"},  # one placeholder per image
-            {"type": "image"},
+            *[{"type": "image"} for _ in image_list],  # one placeholder per image
             {"type": "text", "text": prompt},
         ],
     },
@@ -147,26 +146,41 @@ Since `st.file_uploader` can't be programmatically populated, the image-editing 
 
 ## Testing
 
-### VLM tests
+### Test infrastructure changes
 
-`_make_mock_vlm()` returns a `(mock_processor, mock_model)` tuple. The mock processor must support: `apply_chat_template()` → returns a string, `__call__()` → returns a dict-like with `.to()` returning an object with `input_ids` attribute (a tensor), and `batch_decode()` → returns a list of strings. The mock model must support `generate()` → returns a tensor. `_reload_app()` patches `transformers.AutoProcessor` and `transformers.AutoModelForVision2Seq` at the `transformers` module level (matching the existing pattern of patching at import source, e.g., `patch("transformers.AutoProcessor")`).
+**`_make_mock_vlm()`** replaces `_make_mock_llm()`. Returns a `(mock_processor, mock_model)` tuple:
+- `mock_processor.apply_chat_template()` → returns a string
+- `mock_processor()` (callable) → returns a dict-like with `.to()` returning an object with `input_ids` attribute (a tensor, needed for output slicing)
+- `mock_processor.batch_decode()` → returns `["enhanced prompt"]`
+- `mock_model.generate()` → returns a tensor
 
-**`TestVLMInit` (replaces `TestLLMInit`):**
+**`_reload_app()` signature changes:** Replace `mock_llm` parameter with `mock_processor` and `mock_model` (or a combined `mock_vlm` tuple). Internally, patch `transformers.AutoProcessor` and `transformers.AutoModelForVision2Seq` at the `transformers` module level (matching the existing pattern, e.g., `patch("transformers.AutoProcessor")`), instead of `patch("transformers.pipeline")`.
+
+### `TestVLMInit` (replaces `TestLLMInit`)
+
 - Verify `_get_vlm()` loads `HuggingFaceTB/SmolVLM-500M-Instruct` for both processor and model
 - Verify `torch_dtype` is passed to model (not `dtype`)
 - Verify device placement (MPS/CUDA/CPU) — model uses `.to(device)`
 - Verify `@st.cache_resource` decoration
 
-**`TestUpsamplePrompt` updates:**
-- Verify multimodal message format when `image_list` is provided (messages contain `{"type": "image"}` placeholders, all `content` values use list-of-dicts format)
-- Verify images are passed to `processor()` call
-- Verify text-only path works (no image placeholders, no images to processor, content still uses list-of-dicts format)
-- Verify output extraction slices `output_ids` to exclude input tokens
-- Verify sampling parameters are passed to `model.generate()` (`do_sample`, `temperature`, `top_p`)
-- Verify `has_images` parameter is removed from signature
-- Keep existing tests: empty output fallback, exception fallback, system prompt selection
+### `TestUpsamplePrompt` updates
 
-**Example tests:**
+The mock interaction model changes fundamentally — from calling a `transformers.pipeline` callable to calling `processor.apply_chat_template()`, `processor()`, `model.generate()`, and `processor.batch_decode()` as separate steps. Key changes to existing tests:
+
+- **`test_chat_message_format`**: Assert messages passed to `mock_processor.apply_chat_template()`. All `content` values must use list-of-dicts format: system message asserts `{"role": "system", "content": [{"type": "text", "text": EXPECTED_SYSTEM_PROMPT}]}`, user message asserts `{"role": "user", "content": [{"type": "text", "text": "a cat"}]}`.
+- **`test_generation_kwargs`**: Assert on `mock_model.generate.call_args` instead of `mock_llm.call_args`. Verify `max_new_tokens=150`, `do_sample=True`, `temperature=0.7`, `top_p=0.9` are passed.
+- **`test_extracts_assistant_content`**: Mock `processor.batch_decode()` to return `["  A majestic feline  "]`. Verify the result is stripped to `"A majestic feline"`.
+- **`test_uses_text_only_prompt_without_images`**: Call `upsample_prompt("a cat")` (no `has_images`). Assert system message content is `[{"type": "text", "text": EXPECTED_SYSTEM_PROMPT}]`.
+- **`test_uses_image_editing_prompt_with_images`**: Call `upsample_prompt("make it blue", image_list=[...PIL images...])`. Assert system message content is `[{"type": "text", "text": EXPECTED_SYSTEM_PROMPT_WITH_IMAGES}]`. Assert user message contains `{"type": "image"}` placeholders. Assert images are passed to `processor()` call.
+- **`test_empty_output_returns_original`**: Mock `processor.batch_decode()` to return `[""]`.
+- **`test_exception_returns_original`**: Mock `model.generate` to raise `RuntimeError`.
+
+### `TestStreamlitApp` updates
+
+- Rename `test_get_llm_uses_cache_resource` → `test_get_vlm_uses_cache_resource`. Assert `_get_vlm` has `.clear` attribute.
+
+### Example tests
+
 - Verify `EXAMPLES` list structure (each entry has `label`, `prompt`, `images` keys)
 - Verify image-editing example references files that exist in `examples/`
 - Verify bundled image files can be opened by PIL and are valid images
@@ -188,6 +202,10 @@ No new pip packages. `transformers` already provides `AutoProcessor` and `AutoMo
 - Architecture: update "Prompt upsampling" section for VLM (`_get_vlm()` returns `(processor, model)` tuple, multimodal message format with list-of-dicts content, `AutoProcessor` + `AutoModelForVision2Seq`, `image_list` parameter replacing `has_images`, output extraction via input token slicing)
 - Gotchas: replace SmolLM2 notes with SmolVLM patterns (`torch_dtype` like diffusers, `processor.apply_chat_template()` for multimodal messages, all message `content` must use `[{"type": "text", "text": ...}]` format). Remove `GenerationConfig` gotcha. Add note about `batch_decode` returning full sequence requiring input token slicing.
 - Memory: update from ~3.4GB to ~1.2GB for VLM, peak from ~19.4GB to ~17.2GB
+
+### pyproject.toml updates
+
+- Update `description` to reference SmolVLM instead of SmolLM2
 
 ### README updates
 
