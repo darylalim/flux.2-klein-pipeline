@@ -34,13 +34,19 @@ def _get_vlm():
 
 ### `upsample_prompt()` changes
 
-Gains an `image_list` parameter (optional list of PIL Images).
+The `has_images` parameter is removed. Replaced by an `image_list` parameter (optional list of PIL Images). System prompt is selected based on `if image_list` instead.
+
+**Message format:** SmolVLM's chat template requires all message `content` values to use the list-of-dicts format `[{"type": "text", "text": "..."}]`, not plain strings. This applies to system messages, user messages, and all paths.
+
+**Output extraction:** `model.generate()` + `processor.batch_decode()` returns the full sequence including the input prompt. To extract only the generated text, slice the output IDs to exclude input tokens before decoding: `output_ids[:, inputs["input_ids"].shape[1]:]`.
+
+**Sampling parameters:** Carry over the existing sampling config (`do_sample=True`, `temperature=0.7`, `top_p=0.9`) as keyword arguments to `model.generate()` alongside `max_new_tokens=150`. The `GenerationConfig` wrapper is no longer needed since we call `model.generate()` directly.
 
 **When images are present:**
 
 ```python
 messages = [
-    {"role": "system", "content": UPSAMPLE_PROMPT_WITH_IMAGES},
+    {"role": "system", "content": [{"type": "text", "text": UPSAMPLE_PROMPT_WITH_IMAGES}]},
     {
         "role": "user",
         "content": [
@@ -52,24 +58,32 @@ messages = [
 ]
 prompt_text = processor.apply_chat_template(messages, add_generation_prompt=True)
 inputs = processor(text=prompt_text, images=image_list, return_tensors="pt").to(device)
-output_ids = model.generate(**inputs, max_new_tokens=150)
-result = processor.batch_decode(output_ids, skip_special_tokens=True)[0]
+output_ids = model.generate(
+    **inputs, max_new_tokens=150, do_sample=True, temperature=0.7, top_p=0.9,
+)
+result = processor.batch_decode(
+    output_ids[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True,
+)[0]
 ```
 
 **When text-only:**
 
 ```python
 messages = [
-    {"role": "system", "content": UPSAMPLE_PROMPT_TEXT_ONLY},
-    {"role": "user", "content": prompt},
+    {"role": "system", "content": [{"type": "text", "text": UPSAMPLE_PROMPT_TEXT_ONLY}]},
+    {"role": "user", "content": [{"type": "text", "text": prompt}]},
 ]
 prompt_text = processor.apply_chat_template(messages, add_generation_prompt=True)
 inputs = processor(text=prompt_text, return_tensors="pt").to(device)
-output_ids = model.generate(**inputs, max_new_tokens=150)
-result = processor.batch_decode(output_ids, skip_special_tokens=True)[0]
+output_ids = model.generate(
+    **inputs, max_new_tokens=150, do_sample=True, temperature=0.7, top_p=0.9,
+)
+result = processor.batch_decode(
+    output_ids[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True,
+)[0]
 ```
 
-System prompt selection unchanged — `UPSAMPLE_PROMPT_WITH_IMAGES` vs `UPSAMPLE_PROMPT_TEXT_ONLY` based on whether images are present.
+System prompt selection based on `if image_list` — `UPSAMPLE_PROMPT_WITH_IMAGES` vs `UPSAMPLE_PROMPT_TEXT_ONLY`.
 
 Error handling unchanged — try/except around the entire VLM call, fall back to original prompt on any exception. Empty output also falls back to original prompt.
 
@@ -127,30 +141,35 @@ Buttons in a row below the prompt input. Clicking a text-only example sets `st.s
 
 Since `st.file_uploader` can't be programmatically populated, the image-editing example loads images directly into `image_list` via session state and displays them with `st.image()` previews, bypassing the uploader widget.
 
-On the next rerun, the prompt input reads from `st.session_state.example_prompt`, and the image handling logic merges `st.session_state.example_images` with any manually uploaded files.
+**Example images replace, not merge with, uploaded files.** When the user clicks the image-editing example, `st.session_state.example_images` is set and any previously uploaded files are ignored for that run. If the user then uploads new files via the uploader, `example_images` is cleared (same clearing logic as below).
+
+**State clearing:** `st.session_state.example_prompt` is cleared when the user modifies the prompt text input. `st.session_state.example_images` is cleared when the user uploads new files or when the prompt text changes. This prevents stale example state from persisting after the user starts their own workflow.
 
 ## Testing
 
 ### VLM tests
 
-`_make_mock_vlm()` returns a `(mock_processor, mock_model)` tuple. `_reload_app()` patches `AutoProcessor.from_pretrained` and `AutoModelForVision2Seq.from_pretrained` instead of `transformers.pipeline`.
+`_make_mock_vlm()` returns a `(mock_processor, mock_model)` tuple. The mock processor must support: `apply_chat_template()` → returns a string, `__call__()` → returns a dict-like with `.to()` returning an object with `input_ids` attribute (a tensor), and `batch_decode()` → returns a list of strings. The mock model must support `generate()` → returns a tensor. `_reload_app()` patches `transformers.AutoProcessor` and `transformers.AutoModelForVision2Seq` at the `transformers` module level (matching the existing pattern of patching at import source, e.g., `patch("transformers.AutoProcessor")`).
 
 **`TestVLMInit` (replaces `TestLLMInit`):**
 - Verify `_get_vlm()` loads `HuggingFaceTB/SmolVLM-500M-Instruct` for both processor and model
 - Verify `torch_dtype` is passed to model (not `dtype`)
-- Verify device placement (MPS/CUDA/CPU)
+- Verify device placement (MPS/CUDA/CPU) — model uses `.to(device)`
 - Verify `@st.cache_resource` decoration
 
 **`TestUpsamplePrompt` updates:**
-- Verify multimodal message format when `image_list` is provided (messages contain `{"type": "image"}` placeholders)
+- Verify multimodal message format when `image_list` is provided (messages contain `{"type": "image"}` placeholders, all `content` values use list-of-dicts format)
 - Verify images are passed to `processor()` call
-- Verify text-only path works (no image placeholders, no images to processor)
+- Verify text-only path works (no image placeholders, no images to processor, content still uses list-of-dicts format)
+- Verify output extraction slices `output_ids` to exclude input tokens
+- Verify sampling parameters are passed to `model.generate()` (`do_sample`, `temperature`, `top_p`)
+- Verify `has_images` parameter is removed from signature
 - Keep existing tests: empty output fallback, exception fallback, system prompt selection
-- Update for `processor.apply_chat_template()` → `model.generate()` → `processor.batch_decode()` pipeline
 
 **Example tests:**
 - Verify `EXAMPLES` list structure (each entry has `label`, `prompt`, `images` keys)
 - Verify image-editing example references files that exist in `examples/`
+- Verify bundled image files can be opened by PIL and are valid images
 
 ## Dependencies and File Changes
 
@@ -166,8 +185,8 @@ No new pip packages. `transformers` already provides `AutoProcessor` and `AutoMo
 
 ### CLAUDE.md updates
 
-- Architecture: update "Prompt upsampling" section for VLM (`_get_vlm()` returns `(processor, model)` tuple, multimodal message format, `AutoProcessor` + `AutoModelForVision2Seq`)
-- Gotchas: replace SmolLM2 notes with SmolVLM patterns (`torch_dtype` like diffusers, `processor.apply_chat_template()` for multimodal messages). Remove `GenerationConfig` gotcha.
+- Architecture: update "Prompt upsampling" section for VLM (`_get_vlm()` returns `(processor, model)` tuple, multimodal message format with list-of-dicts content, `AutoProcessor` + `AutoModelForVision2Seq`, `image_list` parameter replacing `has_images`, output extraction via input token slicing)
+- Gotchas: replace SmolLM2 notes with SmolVLM patterns (`torch_dtype` like diffusers, `processor.apply_chat_template()` for multimodal messages, all message `content` must use `[{"type": "text", "text": ...}]` format). Remove `GenerationConfig` gotcha. Add note about `batch_decode` returning full sequence requiring input token slicing.
 - Memory: update from ~3.4GB to ~1.2GB for VLM, peak from ~19.4GB to ~17.2GB
 
 ### README updates
