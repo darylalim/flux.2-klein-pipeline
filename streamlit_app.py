@@ -6,7 +6,7 @@ import torch
 from diffusers import Flux2KleinPipeline
 from dotenv import load_dotenv
 from PIL import Image
-from transformers import GenerationConfig, pipeline as transformers_pipeline
+from transformers import AutoModelForImageTextToText, AutoProcessor
 
 load_dotenv()
 
@@ -63,15 +63,14 @@ DEFAULT_CFG = {"Distilled (4 steps)": 1.0, "Base (50 steps)": 4.0}
 
 
 @st.cache_resource
-def _get_llm():
+def _get_vlm():
     device, dtype = _detect_device()
-
-    return transformers_pipeline(
-        "text-generation",
-        model="HuggingFaceTB/SmolLM2-1.7B-Instruct",
-        dtype=dtype,
-        device=device,
-    )
+    processor = AutoProcessor.from_pretrained("HuggingFaceTB/SmolVLM-500M-Instruct")
+    model = AutoModelForImageTextToText.from_pretrained(
+        "HuggingFaceTB/SmolVLM-500M-Instruct",
+        torch_dtype=dtype,
+    ).to(device)
+    return processor, model
 
 
 UPSAMPLE_PROMPT_TEXT_ONLY = (
@@ -105,24 +104,44 @@ UPSAMPLE_PROMPT_WITH_IMAGES = (
 )
 
 
-def upsample_prompt(prompt, has_images=False):
+def upsample_prompt(prompt, image_list=None):
     try:
-        llm = _get_llm()
+        processor, model = _get_vlm()
+        device, _ = _detect_device()
         system_prompt = (
-            UPSAMPLE_PROMPT_WITH_IMAGES if has_images else UPSAMPLE_PROMPT_TEXT_ONLY
+            UPSAMPLE_PROMPT_WITH_IMAGES if image_list else UPSAMPLE_PROMPT_TEXT_ONLY
         )
         messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
+            {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
         ]
-        generation_config = GenerationConfig(
+        if image_list:
+            user_content = [
+                *[{"type": "image"} for _ in image_list],
+                {"type": "text", "text": prompt},
+            ]
+            messages.append({"role": "user", "content": user_content})
+        else:
+            messages.append(
+                {"role": "user", "content": [{"type": "text", "text": prompt}]}
+            )
+        prompt_text = processor.apply_chat_template(
+            messages, add_generation_prompt=True
+        )
+        processor_kwargs = {"text": prompt_text, "return_tensors": "pt"}
+        if image_list:
+            processor_kwargs["images"] = image_list
+        inputs = processor(**processor_kwargs).to(device)
+        output_ids = model.generate(
+            **inputs,
             max_new_tokens=150,
             do_sample=True,
             temperature=0.7,
             top_p=0.9,
         )
-        result = llm(messages, generation_config=generation_config)
-        enhanced = result[0]["generated_text"][-1]["content"].strip()
+        enhanced = processor.batch_decode(
+            output_ids[:, inputs["input_ids"].shape[1] :],
+            skip_special_tokens=True,
+        )[0].strip()
         if not enhanced:
             return prompt
         return enhanced
@@ -230,7 +249,7 @@ if __name__ == "__main__":
 
     if st.button("Enhance Prompt"):
         with st.spinner("Enhancing prompt..."):
-            enhanced = upsample_prompt(prompt, has_images=bool(uploaded_files))
+            enhanced = upsample_prompt(prompt, image_list=image_list)
         st.session_state.enhanced_prompt = enhanced
 
     if "enhanced_prompt" in st.session_state:
