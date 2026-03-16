@@ -1,7 +1,7 @@
 [project]
 name = "flux2-klein-pipeline"
 version = "0.1.0"
-description = "Generate and edit images with FLUX.2 Klein (Distilled and Base) and optional prompt enhancement via SmolVLM"
+description = "Generate and edit images with FLUX.2 Klein (Distilled and Base), optional prompt enhancement via SmolVLM, and per-step progress tracking"
 requires-python = ">=3.12"
 dependencies = [
     "accelerate",

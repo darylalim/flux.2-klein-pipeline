@@ -9,6 +9,8 @@ Generate and edit images with [FLUX.2 Klein (4B)](https://huggingface.co/black-f
 - Multi-image upload for editing and compositing workflows
 - Auto-dimension: width/height sliders adjust to match uploaded image aspect ratio
 - Vision-aware prompt enhancement via SmolVLM-500M-Instruct (optional, loaded on first use)
+- Auto-enhance prompt: checkbox in advanced settings to enhance before generation
+- Per-step progress bar during inference
 - Pre-built example prompts with bundled images
 - Configurable seed, dimensions, guidance scale, and inference steps
 
