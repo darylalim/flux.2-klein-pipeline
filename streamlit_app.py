@@ -223,6 +223,7 @@ def infer(
     num_inference_steps=None,
     mode="Distilled (4 steps)",
     image_list=None,
+    progress_callback=None,
 ):
     if guidance_scale is None:
         guidance_scale = DEFAULT_CFG[mode]
@@ -246,6 +247,14 @@ def infer(
 
     if image_list is not None:
         pipe_kwargs["image"] = image_list
+
+    if progress_callback is not None:
+
+        def _on_step_end(_pipe, step, _timestep, callback_kwargs):
+            progress_callback(step + 1, num_inference_steps)
+            return callback_kwargs
+
+        pipe_kwargs["callback_on_step_end"] = _on_step_end
 
     with torch.inference_mode():
         image = pipe(**pipe_kwargs).images[0]
@@ -405,18 +414,24 @@ if __name__ == "__main__":
             )
 
     if st.button("Run", type="primary"):
-        with st.spinner("Generating..."):
-            image, used_seed = infer(
-                final_prompt,
-                seed_val,
-                randomize_seed,
-                width,
-                height,
-                guidance_scale,
-                num_inference_steps,
-                mode=mode,
-                image_list=image_list,
-            )
+        progress_bar = st.progress(0, text="Starting...")
+
+        def _update_progress(step, total):
+            progress_bar.progress(step / total, text=f"Step {step}/{total}")
+
+        image, used_seed = infer(
+            final_prompt,
+            seed_val,
+            randomize_seed,
+            width,
+            height,
+            guidance_scale,
+            num_inference_steps,
+            mode=mode,
+            image_list=image_list,
+            progress_callback=_update_progress,
+        )
+        progress_bar.empty()
         st.session_state.result_image = image
         st.session_state.result_seed = used_seed if randomize_seed else None
 

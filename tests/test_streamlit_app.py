@@ -520,6 +520,142 @@ class TestInfer:
             call_kwargs = mock_pipe.call_args[1]
             assert "image" not in call_kwargs
 
+    def test_progress_callback_passed_to_pipeline(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
+        with (
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_cls.from_pretrained.return_value = mock_pipe
+            callback = MagicMock()
+            streamlit_app.infer("a cat", progress_callback=callback)
+            call_kwargs = mock_pipe.call_args[1]
+            assert "callback_on_step_end" in call_kwargs
+            assert callable(call_kwargs["callback_on_step_end"])
+
+    def test_no_callback_when_progress_callback_none(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
+        with (
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_cls.from_pretrained.return_value = mock_pipe
+            streamlit_app.infer("a cat")
+            call_kwargs = mock_pipe.call_args[1]
+            assert "callback_on_step_end" not in call_kwargs
+
+    def test_progress_callback_invoked_with_step_and_total(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
+        with (
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_cls.from_pretrained.return_value = mock_pipe
+            callback = MagicMock()
+            streamlit_app.infer(
+                "a cat", num_inference_steps=4, progress_callback=callback
+            )
+            on_step_end = mock_pipe.call_args[1]["callback_on_step_end"]
+            result = on_step_end(mock_pipe, 0, 999, {"latents": None})
+            callback.assert_called_once_with(1, 4)
+            assert isinstance(result, dict)
+
+    def test_progress_callback_returns_callback_kwargs(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
+        with (
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_cls.from_pretrained.return_value = mock_pipe
+            callback = MagicMock()
+            streamlit_app.infer("a cat", progress_callback=callback)
+            on_step_end = mock_pipe.call_args[1]["callback_on_step_end"]
+            test_kwargs = {"latents": "test_tensor"}
+            result = on_step_end(mock_pipe, 2, 500, test_kwargs)
+            assert result is test_kwargs
+
+    def test_progress_callback_with_base_mode(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
+        with (
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_cls.from_pretrained.return_value = mock_pipe
+            callback = MagicMock()
+            streamlit_app.infer(
+                "a cat", mode="Base (50 steps)", progress_callback=callback
+            )
+            on_step_end = mock_pipe.call_args[1]["callback_on_step_end"]
+            on_step_end(mock_pipe, 0, 999, {"latents": None})
+            callback.assert_called_once_with(1, 50)
+
+    def test_progress_callback_step_counts_across_steps(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
+        with (
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_cls.from_pretrained.return_value = mock_pipe
+            callback = MagicMock()
+            streamlit_app.infer(
+                "a cat", num_inference_steps=4, progress_callback=callback
+            )
+            on_step_end = mock_pipe.call_args[1]["callback_on_step_end"]
+            for step in range(4):
+                on_step_end(mock_pipe, step, 999 - step, {"latents": None})
+            assert callback.call_count == 4
+            callback.assert_any_call(1, 4)
+            callback.assert_any_call(2, 4)
+            callback.assert_any_call(3, 4)
+            callback.assert_any_call(4, 4)
+
+    def test_progress_callback_with_image_list(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
+        images = [Image.new("RGB", (64, 64))]
+        with (
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_cls.from_pretrained.return_value = mock_pipe
+            callback = MagicMock()
+            streamlit_app.infer(
+                "edit this", image_list=images, progress_callback=callback
+            )
+            call_kwargs = mock_pipe.call_args[1]
+            assert call_kwargs["image"] is images
+            assert "callback_on_step_end" in call_kwargs
+
+    def test_progress_callback_with_explicit_steps(self):
+        mock_pipe = _make_mock_pipe()
+        streamlit_app, _ = _reload_app(mock_pipe)
+        with (
+            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
+            patch("torch.backends.mps.is_available", return_value=False),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            mock_cls.from_pretrained.return_value = mock_pipe
+            callback = MagicMock()
+            streamlit_app.infer(
+                "a cat", num_inference_steps=10, progress_callback=callback
+            )
+            on_step_end = mock_pipe.call_args[1]["callback_on_step_end"]
+            on_step_end(mock_pipe, 9, 100, {"latents": None})
+            callback.assert_called_once_with(10, 10)
+
 
 class TestDimensionsFromImages:
     def test_square_image(self):
