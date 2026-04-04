@@ -1,57 +1,48 @@
 import importlib
 from unittest.mock import ANY, MagicMock, patch
 
-import torch
 from PIL import Image
 
 
-def _make_mock_pipe():
-    """Create a mock diffusion pipeline that returns a dummy image."""
-    pipe = MagicMock()
-    pipe.return_value.images = [Image.new("RGB", (64, 64))]
-    return pipe
+def _make_mock_model():
+    """Create a mock mflux model that returns a dummy image."""
+    model = MagicMock()
+    model.generate_image.return_value = Image.new("RGB", (64, 64))
+    model.callbacks = MagicMock()
+    return model
 
 
-class _ToableDict(dict):
-    """A dict subclass with a .to() method that returns self, mimicking processor output."""
+class _MockGenerationResult:
+    """Mock mlx-vlm GenerationResult with a .text attribute."""
 
-    def to(self, device):
-        return self
+    def __init__(self, text="enhanced prompt"):
+        self.text = text
 
 
 def _make_mock_vlm():
-    """Create a mock VLM (processor + model) pair."""
+    """Create a mock VLM (model, processor, config) triple."""
     mock_processor = MagicMock()
-    mock_processor.apply_chat_template.return_value = "formatted prompt"
-    input_ids = torch.tensor([[1, 2, 3]])
-    mock_inputs = _ToableDict(
-        {"input_ids": input_ids, "attention_mask": torch.tensor([[1, 1, 1]])}
-    )
-    mock_processor.return_value = mock_inputs
-    mock_processor.batch_decode.return_value = ["enhanced prompt"]
-
     mock_model = MagicMock()
-    mock_model.generate.return_value = torch.tensor([[1, 2, 3, 4, 5]])
-    mock_model.to.return_value = mock_model
-
-    return mock_processor, mock_model
+    mock_config = MagicMock()
+    return mock_model, mock_processor, mock_config
 
 
-def _reload_app(mock_pipe, *, mock_vlm=None, mps_available=False, cuda_available=False):
+def _reload_app(mock_model, *, mock_vlm=None):
     """Reload app module with mocked heavy dependencies and passthrough cache."""
     with (
-        patch("diffusers.Flux2KleinPipeline") as mock_cls,
-        patch("transformers.AutoProcessor") as mock_ap,
-        patch("transformers.AutoModelForImageTextToText") as mock_vm,
-        patch("torch.backends.mps.is_available", return_value=mps_available),
-        patch("torch.cuda.is_available", return_value=cuda_available),
+        patch("mflux.models.flux2.variants.Flux2Klein", return_value=mock_model) as mock_cls,
+        patch("mflux.models.common.config.ModelConfig") as mock_model_config,
+        patch("mlx_vlm.load") as mock_load,
+        patch("mlx_vlm.generate") as mock_generate,
+        patch("mlx_vlm.prompt_utils.apply_chat_template") as mock_chat,
+        patch("mlx_vlm.utils.load_config") as mock_load_config,
         patch("streamlit.cache_resource", lambda f: f),
     ):
-        mock_cls.from_pretrained.return_value = mock_pipe
         if mock_vlm is not None:
-            mock_processor, mock_model = mock_vlm
-            mock_ap.from_pretrained.return_value = mock_processor
-            mock_vm.from_pretrained.return_value = mock_model
+            mock_vlm_model, mock_vlm_processor, mock_vlm_config = mock_vlm
+            mock_load.return_value = (mock_vlm_model, mock_vlm_processor)
+            mock_load_config.return_value = mock_vlm_config
+
         import streamlit_app
 
         importlib.reload(streamlit_app)
