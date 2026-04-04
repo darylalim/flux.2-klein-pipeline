@@ -1,23 +1,22 @@
 import os
 import random
-from functools import lru_cache
 
 import streamlit as st
-import torch
-from diffusers import Flux2KleinPipeline
 from dotenv import load_dotenv
+from mflux.models.common.config import ModelConfig
+from mflux.models.flux2.variants import Flux2Klein
+from mlx_vlm import generate as vlm_generate
+from mlx_vlm import load as load_vlm
+from mlx_vlm.prompt_utils import apply_chat_template
+from mlx_vlm.utils import load_config
 from PIL import Image
-from transformers import AutoModelForImageTextToText, AutoProcessor
 
 load_dotenv()
-
-hf_token = os.getenv("HF_TOKEN")
 
 MAX_SEED = 2_147_483_647
 MAX_IMAGE_SIZE = 1440
 
-REPO_ID_DISTILLED = "black-forest-labs/FLUX.2-klein-4B"
-REPO_ID_BASE = "black-forest-labs/FLUX.2-klein-base-4B"
+VLM_MODEL_ID = "mlx-community/SmolVLM-500M-Instruct-bf16"
 
 MODE_DEFAULTS = {
     "Distilled (4 steps)": {"steps": 4, "cfg": 1.0},
@@ -25,43 +24,19 @@ MODE_DEFAULTS = {
 }
 
 
-@lru_cache
-def _detect_device():
-    if torch.backends.mps.is_available():
-        return "mps", torch.bfloat16
-    if torch.cuda.is_available():
-        return "cuda", torch.bfloat16
-    return "cpu", torch.bfloat16
-
-
-def _load_pipe(repo_id):
-    device, dtype = _detect_device()
-    pipe = Flux2KleinPipeline.from_pretrained(
-        repo_id,
-        torch_dtype=dtype,
-        use_safetensors=True,
-        token=hf_token,
-    )
-    if device == "cuda":
-        pipe.enable_model_cpu_offload()
-    else:
-        pipe.to(device)
-    return pipe
+@st.cache_resource
+def _get_model_distilled():
+    return Flux2Klein(model_config=ModelConfig.flux2_klein_4b())
 
 
 @st.cache_resource
-def _get_pipe_distilled():
-    return _load_pipe(REPO_ID_DISTILLED)
+def _get_model_base():
+    return Flux2Klein(model_config=ModelConfig.flux2_klein_base_4b())
 
 
-@st.cache_resource
-def _get_pipe_base():
-    return _load_pipe(REPO_ID_BASE)
-
-
-PIPES = {
-    "Distilled (4 steps)": _get_pipe_distilled,
-    "Base (50 steps)": _get_pipe_base,
+MODELS = {
+    "Distilled (4 steps)": _get_model_distilled,
+    "Base (50 steps)": _get_model_base,
 }
 
 EXAMPLES = [
