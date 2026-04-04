@@ -2,7 +2,7 @@ import random
 
 import streamlit as st
 from mflux.models.common.config import ModelConfig
-from mflux.models.flux2.variants import Flux2Klein
+from mflux.models.flux2.variants import Flux2Klein, Flux2KleinEdit
 from mlx_vlm import generate as vlm_generate
 from mlx_vlm import load as load_vlm
 from mlx_vlm.prompt_utils import apply_chat_template
@@ -33,6 +33,22 @@ def _get_model_base():
 MODELS = {
     "Distilled (4 steps)": _get_model_distilled,
     "Base (50 steps)": _get_model_base,
+}
+
+
+@st.cache_resource
+def _get_edit_model_distilled():
+    return Flux2KleinEdit(model_config=ModelConfig.flux2_klein_4b())
+
+
+@st.cache_resource
+def _get_edit_model_base():
+    return Flux2KleinEdit(model_config=ModelConfig.flux2_klein_base_4b())
+
+
+EDIT_MODELS = {
+    "Distilled (4 steps)": _get_edit_model_distilled,
+    "Base (50 steps)": _get_edit_model_base,
 }
 
 EXAMPLES = [
@@ -197,7 +213,10 @@ def infer(
     if randomize_seed:
         seed = random.randint(0, MAX_SEED)
 
-    model = MODELS[mode]()
+    if image_list:
+        model = EDIT_MODELS[mode]()
+    else:
+        model = MODELS[mode]()
 
     if progress_callback is not None:
 
@@ -207,15 +226,25 @@ def infer(
 
         model.callbacks.register(_ProgressReporter())
 
-    image = model.generate_image(
-        seed=seed,
-        prompt=prompt,
-        num_inference_steps=num_inference_steps,
-        width=width,
-        height=height,
-        guidance=guidance_scale,
-        image_paths=image_list if image_list else None,
-    )
+    if image_list:
+        image = model.generate_image(
+            seed=seed,
+            prompt=prompt,
+            num_inference_steps=num_inference_steps,
+            width=width,
+            height=height,
+            guidance=guidance_scale,
+            image_paths=image_list,
+        )
+    else:
+        image = model.generate_image(
+            seed=seed,
+            prompt=prompt,
+            num_inference_steps=num_inference_steps,
+            width=width,
+            height=height,
+            guidance=guidance_scale,
+        )
 
     return image, seed
 
