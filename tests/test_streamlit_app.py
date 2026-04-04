@@ -331,103 +331,103 @@ class TestInfer:
 
 class TestDimensionsFromImages:
     def test_square_image(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (800, 800))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 1024
         assert h == 1024
 
     def test_landscape_image(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (1600, 800))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 1024
         assert h == 512
 
     def test_portrait_image(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (800, 1600))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 512
         assert h == 1024
 
     def test_rounds_to_multiple_of_32(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (1000, 700))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w % 32 == 0
         assert h % 32 == 0
 
     def test_clamps_min_to_512(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (3000, 500))]
         _, h = streamlit_app._dimensions_from_images(images)
         assert h >= 512
 
     def test_zero_height_returns_default(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (100, 0))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 1024
         assert h == 1024
 
     def test_zero_width_returns_default(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (0, 100))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 1024
         assert h == 1024
 
     def test_uses_first_image_only(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (1600, 800)), Image.new("RGB", (800, 1600))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 1024
         assert h == 512
 
     def test_4_3_aspect_ratio(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (1200, 900))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 1024
         assert h == 768
 
     def test_16_9_aspect_ratio(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (1920, 1080))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 1024
         assert h == 576
 
     def test_portrait_3_4_aspect_ratio(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (900, 1200))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 768
         assert h == 1024
 
     def test_extreme_panoramic_clamps_height(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (5000, 500))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 1024
         assert h == 512
 
     def test_extreme_tall_clamps_width(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (500, 5000))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 512
@@ -721,8 +721,8 @@ class TestUpsamplePrompt:
 
 class TestResolvePrompt:
     def test_returns_original_when_auto_enhance_off(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         result, was_enhanced = streamlit_app._resolve_prompt(
             "a cat", None, auto_enhance=False, already_enhanced=False
         )
@@ -730,8 +730,8 @@ class TestResolvePrompt:
         assert was_enhanced is False
 
     def test_returns_original_when_already_enhanced(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         result, was_enhanced = streamlit_app._resolve_prompt(
             "a cat", None, auto_enhance=True, already_enhanced=True
         )
@@ -739,18 +739,20 @@ class TestResolvePrompt:
         assert was_enhanced is False
 
     def test_enhances_when_auto_enhance_on_and_not_already_enhanced(self):
-        mock_pipe = _make_mock_pipe()
+        mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_pipe, mock_vlm=mock_vlm)
+        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         with (
-            patch("streamlit_app.AutoProcessor") as mock_ap,
-            patch("streamlit_app.AutoModelForImageTextToText") as mock_vm,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
+            patch("streamlit_app.load_vlm") as mock_load,
+            patch("streamlit_app.load_config") as mock_lc,
+            patch("streamlit_app.apply_chat_template") as mock_chat,
+            patch("streamlit_app.vlm_generate") as mock_gen,
         ):
-            mock_processor, mock_model = mock_vlm
-            mock_ap.from_pretrained.return_value = mock_processor
-            mock_vm.from_pretrained.return_value = mock_model
+            mock_vlm_model, mock_vlm_processor, mock_vlm_config = mock_vlm
+            mock_load.return_value = (mock_vlm_model, mock_vlm_processor)
+            mock_lc.return_value = mock_vlm_config
+            mock_chat.return_value = "formatted prompt"
+            mock_gen.return_value = _MockGenerationResult("enhanced prompt")
             result, was_enhanced = streamlit_app._resolve_prompt(
                 "a cat", None, auto_enhance=True, already_enhanced=False
             )
@@ -758,29 +760,31 @@ class TestResolvePrompt:
             assert was_enhanced is True
 
     def test_enhances_with_images(self):
-        mock_pipe = _make_mock_pipe()
+        mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_pipe, mock_vlm=mock_vlm)
+        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         images = [Image.new("RGB", (64, 64))]
         with (
-            patch("streamlit_app.AutoProcessor") as mock_ap,
-            patch("streamlit_app.AutoModelForImageTextToText") as mock_vm,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
+            patch("streamlit_app.load_vlm") as mock_load,
+            patch("streamlit_app.load_config") as mock_lc,
+            patch("streamlit_app.apply_chat_template") as mock_chat,
+            patch("streamlit_app.vlm_generate") as mock_gen,
         ):
-            mock_processor, mock_model = mock_vlm
-            mock_ap.from_pretrained.return_value = mock_processor
-            mock_vm.from_pretrained.return_value = mock_model
+            mock_vlm_model, mock_vlm_processor, mock_vlm_config = mock_vlm
+            mock_load.return_value = (mock_vlm_model, mock_vlm_processor)
+            mock_lc.return_value = mock_vlm_config
+            mock_chat.return_value = "formatted prompt"
+            mock_gen.return_value = _MockGenerationResult("enhanced prompt")
             result, was_enhanced = streamlit_app._resolve_prompt(
                 "edit this", images, auto_enhance=True, already_enhanced=False
             )
             assert was_enhanced is True
-            call_kwargs = mock_processor.call_args[1]
-            assert call_kwargs["images"] is images
+            call_kwargs = mock_gen.call_args[1]
+            assert call_kwargs["image"] is images
 
     def test_both_flags_false(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         result, was_enhanced = streamlit_app._resolve_prompt(
             "a cat", None, auto_enhance=False, already_enhanced=True
         )
@@ -788,20 +792,21 @@ class TestResolvePrompt:
         assert was_enhanced is False
 
     def test_falls_back_on_vlm_error(self):
-        mock_pipe = _make_mock_pipe()
+        mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        mock_processor, mock_model = mock_vlm
-        mock_model.generate.side_effect = RuntimeError("OOM")
-        streamlit_app, _ = _reload_app(mock_pipe, mock_vlm=mock_vlm)
+        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         with (
-            patch("streamlit_app.AutoProcessor") as mock_ap,
-            patch("streamlit_app.AutoModelForImageTextToText") as mock_vm,
+            patch("streamlit_app.load_vlm") as mock_load,
+            patch("streamlit_app.load_config") as mock_lc,
+            patch("streamlit_app.apply_chat_template") as mock_chat,
+            patch("streamlit_app.vlm_generate") as mock_gen,
             patch("streamlit_app.st"),
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
         ):
-            mock_ap.from_pretrained.return_value = mock_processor
-            mock_vm.from_pretrained.return_value = mock_model
+            mock_vlm_model, mock_vlm_processor, mock_vlm_config = mock_vlm
+            mock_load.return_value = (mock_vlm_model, mock_vlm_processor)
+            mock_lc.return_value = mock_vlm_config
+            mock_chat.return_value = "formatted prompt"
+            mock_gen.side_effect = RuntimeError("OOM")
             result, was_enhanced = streamlit_app._resolve_prompt(
                 "a cat", None, auto_enhance=True, already_enhanced=False
             )
@@ -811,8 +816,8 @@ class TestResolvePrompt:
 
 class TestClearEnhancement:
     def test_clears_all_enhancement_keys(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         with patch("streamlit_app.st") as mock_st:
             mock_st.session_state = {
                 "enhanced_prompt": "foo",
@@ -827,8 +832,8 @@ class TestClearEnhancement:
             assert mock_st.session_state["other_key"] == "keep"
 
     def test_ignores_missing_keys(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         with patch("streamlit_app.st") as mock_st:
             mock_st.session_state = {"other_key": "keep"}
             streamlit_app._clear_enhancement()
@@ -836,61 +841,59 @@ class TestClearEnhancement:
 
 
 class TestStreamlitApp:
-    def test_get_pipe_distilled_uses_cache_resource(self):
-        """Verify _get_pipe_distilled is decorated with @st.cache_resource."""
+    def test_get_model_distilled_uses_cache_resource(self):
+        """Verify _get_model_distilled is decorated with @st.cache_resource."""
         with (
-            patch("diffusers.Flux2KleinPipeline"),
-            patch("transformers.AutoProcessor"),
-            patch("transformers.AutoModelForImageTextToText"),
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
+            patch("mflux.models.flux2.variants.Flux2Klein"),
+            patch("mflux.models.common.config.ModelConfig"),
+            patch("mlx_vlm.load"),
+            patch("mlx_vlm.generate"),
+            patch("mlx_vlm.prompt_utils.apply_chat_template"),
+            patch("mlx_vlm.utils.load_config"),
         ):
             import streamlit_app
 
             importlib.reload(streamlit_app)
-            assert hasattr(streamlit_app._get_pipe_distilled, "clear")
+            assert hasattr(streamlit_app._get_model_distilled, "clear")
 
-    def test_get_pipe_base_uses_cache_resource(self):
-        """Verify _get_pipe_base is decorated with @st.cache_resource."""
+    def test_get_model_base_uses_cache_resource(self):
+        """Verify _get_model_base is decorated with @st.cache_resource."""
         with (
-            patch("diffusers.Flux2KleinPipeline"),
-            patch("transformers.AutoProcessor"),
-            patch("transformers.AutoModelForImageTextToText"),
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
+            patch("mflux.models.flux2.variants.Flux2Klein"),
+            patch("mflux.models.common.config.ModelConfig"),
+            patch("mlx_vlm.load"),
+            patch("mlx_vlm.generate"),
+            patch("mlx_vlm.prompt_utils.apply_chat_template"),
+            patch("mlx_vlm.utils.load_config"),
         ):
             import streamlit_app
 
             importlib.reload(streamlit_app)
-            assert hasattr(streamlit_app._get_pipe_base, "clear")
+            assert hasattr(streamlit_app._get_model_base, "clear")
 
     def test_get_vlm_uses_cache_resource(self):
-        """Verify _get_vlm is decorated with @st.cache_resource (not passthrough)."""
+        """Verify _get_vlm is decorated with @st.cache_resource."""
         with (
-            patch("diffusers.Flux2KleinPipeline"),
-            patch("transformers.AutoProcessor"),
-            patch("transformers.AutoModelForImageTextToText"),
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
+            patch("mflux.models.flux2.variants.Flux2Klein"),
+            patch("mflux.models.common.config.ModelConfig"),
+            patch("mlx_vlm.load"),
+            patch("mlx_vlm.generate"),
+            patch("mlx_vlm.prompt_utils.apply_chat_template"),
+            patch("mlx_vlm.utils.load_config"),
         ):
             import streamlit_app
 
             importlib.reload(streamlit_app)
             assert hasattr(streamlit_app._get_vlm, "clear")
 
-    def test_no_pipe_global(self):
-        import streamlit_app
-
-        assert not hasattr(streamlit_app, "_pipe")
-
     def test_ui_not_executed_on_import(self):
-        mock_pipe = _make_mock_pipe()
+        mock_model = _make_mock_model()
         with (
             patch("streamlit.markdown") as mock_markdown,
             patch("streamlit.text_input") as mock_text_input,
             patch("streamlit.button") as mock_button,
         ):
-            _reload_app(mock_pipe)
+            _reload_app(mock_model)
             mock_markdown.assert_not_called()
             mock_text_input.assert_not_called()
             mock_button.assert_not_called()
@@ -898,8 +901,8 @@ class TestStreamlitApp:
 
 class TestExamples:
     def test_examples_list_structure(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         assert isinstance(streamlit_app.EXAMPLES, list)
         assert len(streamlit_app.EXAMPLES) == 5
         for example in streamlit_app.EXAMPLES:
@@ -908,14 +911,14 @@ class TestExamples:
             assert "images" in example
 
     def test_text_only_examples_have_no_images(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         for example in streamlit_app.EXAMPLES[:4]:
             assert example["images"] is None
 
     def test_image_example_has_valid_paths(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         image_example = streamlit_app.EXAMPLES[4]
         assert image_example["images"] is not None
         assert len(image_example["images"]) == 3
@@ -923,8 +926,8 @@ class TestExamples:
     def test_bundled_images_are_valid(self):
         import os
 
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         image_example = streamlit_app.EXAMPLES[4]
         for path in image_example["images"]:
             assert os.path.exists(path), f"Missing: {path}"
