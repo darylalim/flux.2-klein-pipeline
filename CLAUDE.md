@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-FLUX.2 Klein Pipeline is a single-file Streamlit web application that generates and edits images using [FLUX.2 Klein](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) (4B parameters) from Black Forest Labs. Two model variants: Distilled (4 steps, fast) and Base (50 steps, higher quality). Runs natively on Apple Silicon via MLX (mflux for diffusion, mlx-vlm for VLM). Supports multi-image input for editing workflows. Optional vision-aware prompt upsampling via SmolVLM-500M-Instruct (mlx-community/SmolVLM-500M-Instruct-bf16) — the VLM can see uploaded images when enhancing editing prompts. Includes pre-built example prompts with bundled images.
+FLUX.2 Klein Pipeline is a single-file Streamlit web application that generates and edits images using [FLUX.2 Klein](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) (4B parameters) from Black Forest Labs. Runs natively on Apple Silicon via [mflux](https://github.com/filipstrand/mflux) (diffusion) and [mlx-vlm](https://github.com/Blaizzy/mlx-vlm) (VLM). Two model variants: Distilled (4 steps, fast) and Base (50 steps, higher quality). Supports multi-image input for editing workflows. Optional vision-aware prompt upsampling via [SmolVLM-500M-Instruct](https://huggingface.co/mlx-community/SmolVLM-500M-Instruct-bf16) — the VLM can see uploaded images when enhancing editing prompts. Includes pre-built example prompts with bundled images.
 
 ## Setup
 
@@ -12,7 +12,7 @@ FLUX.2 Klein Pipeline is a single-file Streamlit web application that generates 
 uv sync
 ```
 
-No license acceptance is required — FLUX.2 Klein is Apache 2.0 licensed. Optionally create a `.env` file with `HF_TOKEN=<your-token>` for authenticated Hugging Face access.
+Requires Apple Silicon (M1+) and Python 3.12+.
 
 ## Running
 
@@ -46,22 +46,22 @@ uv run pytest tests/test_streamlit_app.py  # Run a single test file
 
 ### mflux / FLUX.2 Klein
 
-- **mflux uses `Flux2Klein(model_config=ModelConfig.flux2_klein_4b())`, not `from_pretrained`.** No repo ID strings, no `torch_dtype`, no `token` parameter.
-- **MLX manages device placement automatically.** No `pipe.to(device)` or `enable_model_cpu_offload()`. Apple Silicon unified memory is used directly.
-- **`generate_image()` returns a PIL Image directly.** Not wrapped in a `.images` list like diffusers.
-- **Progress callbacks use `model.callbacks.register()`.** Register an object with a `call_in_loop(self, t, seed, prompt, latents, config, time_steps)` method. The callback must NOT return callback_kwargs (unlike diffusers).
-- **`image_paths` accepts PIL Image objects at runtime.** Despite the name and type annotation (`list[Path | str]`), the internal `ImageUtil.load_image()` handles PIL objects via isinstance check.
-- **The guidance parameter is `guidance`, not `guidance_scale`.** Different from diffusers naming.
+- **Models are created via `Flux2Klein(model_config=ModelConfig.flux2_klein_4b())`.** No repo ID strings or token parameters.
+- **MLX manages device placement automatically.** Apple Silicon unified memory is used directly.
+- **`generate_image()` returns a single PIL Image directly.**
+- **Progress callbacks use `model.callbacks.register()`.** Register an object with a `call_in_loop(self, t, seed, prompt, latents, config, time_steps)` method.
+- **`image_paths` accepts PIL Image objects at runtime.** Despite the type annotation (`list[Path | str]`), `ImageUtil.load_image()` handles PIL objects via isinstance check.
+- **The guidance parameter is named `guidance`**, not `guidance_scale`.
 - **FLUX.2 Klein does not support negative prompts.**
 - **Base uses different defaults than Distilled.** Base: 50 steps, CFG 4.0. Distilled: 4 steps, CFG 1.0.
 
 ### mlx-vlm / SmolVLM
 
 - **Use `mlx_vlm.load()` to get `(model, processor)` and `mlx_vlm.utils.load_config()` for config.** Config is required by `apply_chat_template`.
-- **`mlx_vlm.generate()` handles tokenization and decoding internally.** No manual `processor()` call, no `batch_decode`, no output slicing. Access result via `result.text`.
+- **`mlx_vlm.generate()` handles tokenization and decoding internally.** Access result via `result.text`.
 - **`apply_chat_template` takes `num_images` instead of embedding image tokens in messages.** Pass images as a flat list to the `image` parameter of `generate()`.
-- **`temperature > 0` implies sampling.** No `do_sample` parameter. Use `temperature=0.0` for greedy decoding.
-- **`max_tokens` instead of `max_new_tokens`.** Different parameter name from transformers.
+- **`temperature > 0` implies sampling.** Use `temperature=0.0` for greedy decoding.
+- **Use `max_tokens`** to control output length.
 
 ### General
 
