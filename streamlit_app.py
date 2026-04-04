@@ -237,20 +237,26 @@ if __name__ == "__main__":
         "Prompt", placeholder="Enter your prompt", key="prompt_input"
     )
 
+    def _select_example(example):
+        st.session_state.prompt_input = example["prompt"]
+        st.session_state.last_prompt = example["prompt"]
+        if example["images"]:
+            st.session_state.example_images = [
+                Image.open(p) for p in example["images"]
+            ]
+        else:
+            st.session_state.pop("example_images", None)
+        _clear_enhancement()
+
     example_cols = st.columns(len(EXAMPLES))
     for i, example in enumerate(EXAMPLES):
         with example_cols[i]:
-            if st.button(example["label"], key=f"example_{i}"):
-                st.session_state.prompt_input = example["prompt"]
-                st.session_state.last_prompt = example["prompt"]
-                if example["images"]:
-                    st.session_state.example_images = [
-                        Image.open(p) for p in example["images"]
-                    ]
-                else:
-                    st.session_state.pop("example_images", None)
-                _clear_enhancement()
-                st.rerun()
+            st.button(
+                example["label"],
+                key=f"example_{i}",
+                on_click=_select_example,
+                args=(example,),
+            )
 
     uploaded_files = st.file_uploader(
         "Input images (optional)",
