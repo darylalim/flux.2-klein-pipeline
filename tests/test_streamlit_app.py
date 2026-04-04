@@ -4,10 +4,17 @@ from unittest.mock import MagicMock, patch
 from PIL import Image
 
 
+class _MockGeneratedImage:
+    """Mock mflux GeneratedImage with a .image attribute."""
+
+    def __init__(self, image=None):
+        self.image = image or Image.new("RGB", (64, 64))
+
+
 def _make_mock_model():
-    """Create a mock mflux model that returns a dummy image."""
+    """Create a mock mflux model that returns a dummy GeneratedImage."""
     model = MagicMock()
-    model.generate_image.return_value = Image.new("RGB", (64, 64))
+    model.generate_image.return_value = _MockGeneratedImage()
     model.callbacks = MagicMock()
     return model
 
@@ -27,12 +34,16 @@ def _make_mock_vlm():
     return mock_model, mock_processor, mock_config
 
 
-def _reload_app(mock_model, *, mock_vlm=None):
+def _reload_app(mock_model, *, mock_edit_model=None, mock_vlm=None):
     """Reload app module with mocked heavy dependencies and passthrough cache."""
     with (
         patch(
             "mflux.models.flux2.variants.Flux2Klein", return_value=mock_model
         ) as mock_cls,
+        patch(
+            "mflux.models.flux2.variants.Flux2KleinEdit",
+            return_value=mock_edit_model or mock_model,
+        ) as mock_edit_cls,
         patch("mflux.models.common.config.ModelConfig") as _mock_model_config,
         patch("mlx_vlm.load") as mock_load,
         patch("mlx_vlm.generate") as _mock_generate,
@@ -48,7 +59,7 @@ def _reload_app(mock_model, *, mock_vlm=None):
         import streamlit_app
 
         importlib.reload(streamlit_app)
-        return streamlit_app, mock_cls
+        return streamlit_app, mock_cls, mock_edit_cls
 
 
 class TestConstants:
@@ -84,16 +95,33 @@ class TestConstants:
         )
         assert streamlit_app.MODELS["Base (50 steps)"] is streamlit_app._get_model_base
 
+    def test_edit_models_maps_to_getters(self):
+        import streamlit_app
+
+        assert (
+            streamlit_app.EDIT_MODELS["Distilled (4 steps)"]
+            is streamlit_app._get_edit_model_distilled
+        )
+        assert (
+            streamlit_app.EDIT_MODELS["Base (50 steps)"]
+            is streamlit_app._get_edit_model_base
+        )
+
     def test_mode_defaults_keys_match_models(self):
         import streamlit_app
 
         assert set(streamlit_app.MODE_DEFAULTS) == set(streamlit_app.MODELS)
 
+    def test_mode_defaults_keys_match_edit_models(self):
+        import streamlit_app
+
+        assert set(streamlit_app.MODE_DEFAULTS) == set(streamlit_app.EDIT_MODELS)
+
 
 class TestModelLoading:
     def test_distilled_model_created_with_correct_config(self):
         mock_model = _make_mock_model()
-        streamlit_app, mock_cls = _reload_app(mock_model)
+        streamlit_app, mock_cls, _ = _reload_app(mock_model)
         with (
             patch("streamlit_app.Flux2Klein", return_value=mock_model) as mock_klein,
             patch("streamlit_app.ModelConfig") as mock_config,
@@ -104,7 +132,7 @@ class TestModelLoading:
 
     def test_base_model_created_with_correct_config(self):
         mock_model = _make_mock_model()
-        streamlit_app, mock_cls = _reload_app(mock_model)
+        streamlit_app, mock_cls, _ = _reload_app(mock_model)
         with (
             patch("streamlit_app.Flux2Klein", return_value=mock_model) as mock_klein,
             patch("streamlit_app.ModelConfig") as mock_config,
@@ -113,11 +141,33 @@ class TestModelLoading:
             streamlit_app._get_model_base()
             mock_klein.assert_called_once_with(model_config="base_config")
 
+    def test_edit_distilled_model_created_with_correct_config(self):
+        mock_model = _make_mock_model()
+        streamlit_app, _, _ = _reload_app(mock_model)
+        with (
+            patch("streamlit_app.Flux2KleinEdit", return_value=mock_model) as mock_edit,
+            patch("streamlit_app.ModelConfig") as mock_config,
+        ):
+            mock_config.flux2_klein_4b.return_value = "distilled_config"
+            streamlit_app._get_edit_model_distilled()
+            mock_edit.assert_called_once_with(model_config="distilled_config")
+
+    def test_edit_base_model_created_with_correct_config(self):
+        mock_model = _make_mock_model()
+        streamlit_app, _, _ = _reload_app(mock_model)
+        with (
+            patch("streamlit_app.Flux2KleinEdit", return_value=mock_model) as mock_edit,
+            patch("streamlit_app.ModelConfig") as mock_config,
+        ):
+            mock_config.flux2_klein_base_4b.return_value = "base_config"
+            streamlit_app._get_edit_model_base()
+            mock_edit.assert_called_once_with(model_config="base_config")
+
 
 class TestInfer:
     def test_returns_image_and_seed(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             image, seed = streamlit_app.infer("a cat", seed=42)
             assert isinstance(image, Image.Image)
@@ -125,7 +175,7 @@ class TestInfer:
 
     def test_forwards_args_to_model(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             streamlit_app.infer(
                 "a cat",
@@ -142,26 +192,25 @@ class TestInfer:
                 width=768,
                 height=512,
                 guidance=3.0,
-                image_paths=None,
             )
 
     def test_fixed_seed(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             _, seed = streamlit_app.infer("a cat", seed=99, randomize_seed=False)
             assert seed == 99
 
     def test_randomized_seed(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             _, seed = streamlit_app.infer("a cat", seed=42, randomize_seed=True)
             assert 0 <= seed <= streamlit_app.MAX_SEED
 
     def test_default_params(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             streamlit_app.infer("a cat")
             mock_model.generate_image.assert_called_once_with(
@@ -171,12 +220,11 @@ class TestInfer:
                 width=1024,
                 height=1024,
                 guidance=1.0,
-                image_paths=None,
             )
 
     def test_empty_prompt(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             image, seed = streamlit_app.infer("", seed=42)
             assert isinstance(image, Image.Image)
@@ -187,12 +235,11 @@ class TestInfer:
                 width=1024,
                 height=1024,
                 guidance=1.0,
-                image_paths=None,
             )
 
     def test_mode_selects_base_defaults(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             streamlit_app.infer("a cat", mode="Base (50 steps)")
             mock_model.generate_image.assert_called_once_with(
@@ -202,12 +249,11 @@ class TestInfer:
                 width=1024,
                 height=1024,
                 guidance=4.0,
-                image_paths=None,
             )
 
     def test_explicit_params_override_mode_defaults(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             streamlit_app.infer(
                 "a cat",
@@ -222,12 +268,11 @@ class TestInfer:
                 width=1024,
                 height=1024,
                 guidance=2.0,
-                image_paths=None,
             )
 
     def test_partial_override_steps_only(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             streamlit_app.infer(
                 "a cat",
@@ -238,26 +283,36 @@ class TestInfer:
             assert call_kwargs["num_inference_steps"] == 10
             assert call_kwargs["guidance"] == 4.0
 
-    def test_image_list_passed_to_model(self):
+    def test_image_list_uses_edit_model(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        mock_edit_model = _make_mock_model()
+        streamlit_app, _, _ = _reload_app(mock_model, mock_edit_model=mock_edit_model)
         images = [Image.new("RGB", (64, 64)), Image.new("RGB", (64, 64))]
-        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
+        with (
+            patch("streamlit_app.Flux2Klein", return_value=mock_model),
+            patch("streamlit_app.Flux2KleinEdit", return_value=mock_edit_model),
+        ):
             streamlit_app.infer("edit this", image_list=images)
-            call_kwargs = mock_model.generate_image.call_args[1]
+            call_kwargs = mock_edit_model.generate_image.call_args[1]
             assert call_kwargs["image_paths"] is images
+            mock_model.generate_image.assert_not_called()
 
-    def test_no_image_paths_when_none(self):
+    def test_no_images_uses_txt2img_model(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
-        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
+        mock_edit_model = _make_mock_model()
+        streamlit_app, _, _ = _reload_app(mock_model, mock_edit_model=mock_edit_model)
+        with (
+            patch("streamlit_app.Flux2Klein", return_value=mock_model),
+            patch("streamlit_app.Flux2KleinEdit", return_value=mock_edit_model),
+        ):
             streamlit_app.infer("a cat")
-            call_kwargs = mock_model.generate_image.call_args[1]
-            assert call_kwargs["image_paths"] is None
+            mock_model.generate_image.assert_called_once()
+            assert "image_paths" not in mock_model.generate_image.call_args[1]
+            mock_edit_model.generate_image.assert_not_called()
 
     def test_progress_callback_registered(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             callback = MagicMock()
             streamlit_app.infer("a cat", progress_callback=callback)
@@ -265,14 +320,14 @@ class TestInfer:
 
     def test_no_callback_when_progress_callback_none(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             streamlit_app.infer("a cat")
             mock_model.callbacks.register.assert_not_called()
 
     def test_progress_callback_invoked_with_step_and_total(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             callback = MagicMock()
             streamlit_app.infer(
@@ -286,7 +341,7 @@ class TestInfer:
 
     def test_progress_callback_step_counts_across_steps(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             callback = MagicMock()
             streamlit_app.infer(
@@ -305,7 +360,7 @@ class TestInfer:
 
     def test_progress_callback_with_base_mode(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             callback = MagicMock()
             streamlit_app.infer(
@@ -319,22 +374,26 @@ class TestInfer:
 
     def test_progress_callback_with_image_list(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        mock_edit_model = _make_mock_model()
+        streamlit_app, _, _ = _reload_app(mock_model, mock_edit_model=mock_edit_model)
         images = [Image.new("RGB", (64, 64))]
-        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
+        with (
+            patch("streamlit_app.Flux2Klein", return_value=mock_model),
+            patch("streamlit_app.Flux2KleinEdit", return_value=mock_edit_model),
+        ):
             callback = MagicMock()
             streamlit_app.infer(
                 "edit this", image_list=images, progress_callback=callback
             )
-            call_kwargs = mock_model.generate_image.call_args[1]
+            call_kwargs = mock_edit_model.generate_image.call_args[1]
             assert call_kwargs["image_paths"] is images
-            mock_model.callbacks.register.assert_called_once()
+            mock_edit_model.callbacks.register.assert_called_once()
 
 
 class TestDimensionsFromImages:
     def test_square_image(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (800, 800))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 1024
@@ -342,7 +401,7 @@ class TestDimensionsFromImages:
 
     def test_landscape_image(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (1600, 800))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 1024
@@ -350,7 +409,7 @@ class TestDimensionsFromImages:
 
     def test_portrait_image(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (800, 1600))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 512
@@ -358,7 +417,7 @@ class TestDimensionsFromImages:
 
     def test_rounds_to_multiple_of_32(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (1000, 700))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w % 32 == 0
@@ -366,14 +425,14 @@ class TestDimensionsFromImages:
 
     def test_clamps_min_to_512(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (3000, 500))]
         _, h = streamlit_app._dimensions_from_images(images)
         assert h >= 512
 
     def test_zero_height_returns_default(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (100, 0))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 1024
@@ -381,7 +440,7 @@ class TestDimensionsFromImages:
 
     def test_zero_width_returns_default(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (0, 100))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 1024
@@ -389,7 +448,7 @@ class TestDimensionsFromImages:
 
     def test_uses_first_image_only(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (1600, 800)), Image.new("RGB", (800, 1600))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 1024
@@ -397,7 +456,7 @@ class TestDimensionsFromImages:
 
     def test_4_3_aspect_ratio(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (1200, 900))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 1024
@@ -405,7 +464,7 @@ class TestDimensionsFromImages:
 
     def test_16_9_aspect_ratio(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (1920, 1080))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 1024
@@ -413,7 +472,7 @@ class TestDimensionsFromImages:
 
     def test_portrait_3_4_aspect_ratio(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (900, 1200))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 768
@@ -421,7 +480,7 @@ class TestDimensionsFromImages:
 
     def test_extreme_panoramic_clamps_height(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (5000, 500))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 1024
@@ -429,7 +488,7 @@ class TestDimensionsFromImages:
 
     def test_extreme_tall_clamps_width(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (500, 5000))]
         w, h = streamlit_app._dimensions_from_images(images)
         assert w == 512
@@ -440,7 +499,7 @@ class TestVLMInit:
     def test_vlm_loads_correct_model(self):
         mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         with (
             patch("streamlit_app.load_vlm") as mock_load,
             patch("streamlit_app.load_config") as mock_lc,
@@ -457,7 +516,7 @@ class TestVLMInit:
     def test_vlm_returns_triple(self):
         mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         with (
             patch("streamlit_app.load_vlm") as mock_load,
             patch("streamlit_app.load_config") as mock_lc,
@@ -504,7 +563,7 @@ class TestUpsamplePrompt:
     def test_chat_message_format_text_only(self):
         mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         with (
             patch("streamlit_app.load_vlm") as mock_load,
             patch("streamlit_app.load_config") as mock_lc,
@@ -530,7 +589,7 @@ class TestUpsamplePrompt:
     def test_chat_message_format_with_images(self):
         mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         images = [Image.new("RGB", (64, 64)), Image.new("RGB", (64, 64))]
         with (
             patch("streamlit_app.load_vlm") as mock_load,
@@ -557,7 +616,7 @@ class TestUpsamplePrompt:
     def test_images_passed_to_generate(self):
         mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         images = [Image.new("RGB", (64, 64))]
         with (
             patch("streamlit_app.load_vlm") as mock_load,
@@ -577,7 +636,7 @@ class TestUpsamplePrompt:
     def test_no_images_passed_for_text_only(self):
         mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         with (
             patch("streamlit_app.load_vlm") as mock_load,
             patch("streamlit_app.load_config") as mock_lc,
@@ -596,7 +655,7 @@ class TestUpsamplePrompt:
     def test_generation_kwargs(self):
         mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         with (
             patch("streamlit_app.load_vlm") as mock_load,
             patch("streamlit_app.load_config") as mock_lc,
@@ -617,7 +676,7 @@ class TestUpsamplePrompt:
     def test_extracts_and_strips_output(self):
         mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         with (
             patch("streamlit_app.load_vlm") as mock_load,
             patch("streamlit_app.load_config") as mock_lc,
@@ -632,10 +691,50 @@ class TestUpsamplePrompt:
             result = streamlit_app.upsample_prompt("a cat")
             assert result == "A majestic feline"
 
+    def test_strips_end_of_utterance_token(self):
+        mock_model = _make_mock_model()
+        mock_vlm = _make_mock_vlm()
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        with (
+            patch("streamlit_app.load_vlm") as mock_load,
+            patch("streamlit_app.load_config") as mock_lc,
+            patch("streamlit_app.apply_chat_template") as mock_chat,
+            patch("streamlit_app.vlm_generate") as mock_gen,
+        ):
+            mock_vlm_model, mock_vlm_processor, mock_vlm_config = mock_vlm
+            mock_load.return_value = (mock_vlm_model, mock_vlm_processor)
+            mock_lc.return_value = mock_vlm_config
+            mock_chat.return_value = "formatted prompt"
+            mock_gen.return_value = _MockGenerationResult(
+                "A majestic feline<end_of_utterance>"
+            )
+            result = streamlit_app.upsample_prompt("a cat")
+            assert result == "A majestic feline"
+
+    def test_strips_end_of_utterance_token_mid_text(self):
+        mock_model = _make_mock_model()
+        mock_vlm = _make_mock_vlm()
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        with (
+            patch("streamlit_app.load_vlm") as mock_load,
+            patch("streamlit_app.load_config") as mock_lc,
+            patch("streamlit_app.apply_chat_template") as mock_chat,
+            patch("streamlit_app.vlm_generate") as mock_gen,
+        ):
+            mock_vlm_model, mock_vlm_processor, mock_vlm_config = mock_vlm
+            mock_load.return_value = (mock_vlm_model, mock_vlm_processor)
+            mock_lc.return_value = mock_vlm_config
+            mock_chat.return_value = "formatted prompt"
+            mock_gen.return_value = _MockGenerationResult(
+                "A majestic<end_of_utterance> feline"
+            )
+            result = streamlit_app.upsample_prompt("a cat")
+            assert result == "A majestic feline"
+
     def test_empty_output_returns_original(self):
         mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         with (
             patch("streamlit_app.load_vlm") as mock_load,
             patch("streamlit_app.load_config") as mock_lc,
@@ -653,7 +752,7 @@ class TestUpsamplePrompt:
     def test_whitespace_only_output_returns_original(self):
         mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         with (
             patch("streamlit_app.load_vlm") as mock_load,
             patch("streamlit_app.load_config") as mock_lc,
@@ -671,7 +770,7 @@ class TestUpsamplePrompt:
     def test_exception_returns_original(self):
         mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         with (
             patch("streamlit_app.load_vlm") as mock_load,
             patch("streamlit_app.load_config") as mock_lc,
@@ -693,7 +792,7 @@ class TestUpsamplePrompt:
     def test_empty_image_list_uses_text_only_path(self):
         mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         with (
             patch("streamlit_app.load_vlm") as mock_load,
             patch("streamlit_app.load_config") as mock_lc,
@@ -722,7 +821,7 @@ class TestUpsamplePrompt:
 class TestResolvePrompt:
     def test_returns_original_when_auto_enhance_off(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         result, was_enhanced = streamlit_app._resolve_prompt(
             "a cat", None, auto_enhance=False, already_enhanced=False
         )
@@ -731,7 +830,7 @@ class TestResolvePrompt:
 
     def test_returns_original_when_already_enhanced(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         result, was_enhanced = streamlit_app._resolve_prompt(
             "a cat", None, auto_enhance=True, already_enhanced=True
         )
@@ -741,7 +840,7 @@ class TestResolvePrompt:
     def test_enhances_when_auto_enhance_on_and_not_already_enhanced(self):
         mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         with (
             patch("streamlit_app.load_vlm") as mock_load,
             patch("streamlit_app.load_config") as mock_lc,
@@ -762,7 +861,7 @@ class TestResolvePrompt:
     def test_enhances_with_images(self):
         mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         images = [Image.new("RGB", (64, 64))]
         with (
             patch("streamlit_app.load_vlm") as mock_load,
@@ -784,7 +883,7 @@ class TestResolvePrompt:
 
     def test_both_flags_false(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         result, was_enhanced = streamlit_app._resolve_prompt(
             "a cat", None, auto_enhance=False, already_enhanced=True
         )
@@ -794,7 +893,7 @@ class TestResolvePrompt:
     def test_falls_back_on_vlm_error(self):
         mock_model = _make_mock_model()
         mock_vlm = _make_mock_vlm()
-        streamlit_app, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
+        streamlit_app, _, _ = _reload_app(mock_model, mock_vlm=mock_vlm)
         with (
             patch("streamlit_app.load_vlm") as mock_load,
             patch("streamlit_app.load_config") as mock_lc,
@@ -817,7 +916,7 @@ class TestResolvePrompt:
 class TestClearEnhancement:
     def test_clears_all_enhancement_keys(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         with patch("streamlit_app.st") as mock_st:
             mock_st.session_state = {
                 "enhanced_prompt": "foo",
@@ -833,7 +932,7 @@ class TestClearEnhancement:
 
     def test_ignores_missing_keys(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         with patch("streamlit_app.st") as mock_st:
             mock_st.session_state = {"other_key": "keep"}
             streamlit_app._clear_enhancement()
@@ -845,6 +944,7 @@ class TestStreamlitApp:
         """Verify _get_model_distilled is decorated with @st.cache_resource."""
         with (
             patch("mflux.models.flux2.variants.Flux2Klein"),
+            patch("mflux.models.flux2.variants.Flux2KleinEdit"),
             patch("mflux.models.common.config.ModelConfig"),
             patch("mlx_vlm.load"),
             patch("mlx_vlm.generate"),
@@ -860,6 +960,7 @@ class TestStreamlitApp:
         """Verify _get_model_base is decorated with @st.cache_resource."""
         with (
             patch("mflux.models.flux2.variants.Flux2Klein"),
+            patch("mflux.models.flux2.variants.Flux2KleinEdit"),
             patch("mflux.models.common.config.ModelConfig"),
             patch("mlx_vlm.load"),
             patch("mlx_vlm.generate"),
@@ -871,10 +972,43 @@ class TestStreamlitApp:
             importlib.reload(streamlit_app)
             assert hasattr(streamlit_app._get_model_base, "clear")
 
+    def test_get_edit_model_distilled_uses_cache_resource(self):
+        """Verify _get_edit_model_distilled is decorated with @st.cache_resource."""
+        with (
+            patch("mflux.models.flux2.variants.Flux2Klein"),
+            patch("mflux.models.flux2.variants.Flux2KleinEdit"),
+            patch("mflux.models.common.config.ModelConfig"),
+            patch("mlx_vlm.load"),
+            patch("mlx_vlm.generate"),
+            patch("mlx_vlm.prompt_utils.apply_chat_template"),
+            patch("mlx_vlm.utils.load_config"),
+        ):
+            import streamlit_app
+
+            importlib.reload(streamlit_app)
+            assert hasattr(streamlit_app._get_edit_model_distilled, "clear")
+
+    def test_get_edit_model_base_uses_cache_resource(self):
+        """Verify _get_edit_model_base is decorated with @st.cache_resource."""
+        with (
+            patch("mflux.models.flux2.variants.Flux2Klein"),
+            patch("mflux.models.flux2.variants.Flux2KleinEdit"),
+            patch("mflux.models.common.config.ModelConfig"),
+            patch("mlx_vlm.load"),
+            patch("mlx_vlm.generate"),
+            patch("mlx_vlm.prompt_utils.apply_chat_template"),
+            patch("mlx_vlm.utils.load_config"),
+        ):
+            import streamlit_app
+
+            importlib.reload(streamlit_app)
+            assert hasattr(streamlit_app._get_edit_model_base, "clear")
+
     def test_get_vlm_uses_cache_resource(self):
         """Verify _get_vlm is decorated with @st.cache_resource."""
         with (
             patch("mflux.models.flux2.variants.Flux2Klein"),
+            patch("mflux.models.flux2.variants.Flux2KleinEdit"),
             patch("mflux.models.common.config.ModelConfig"),
             patch("mlx_vlm.load"),
             patch("mlx_vlm.generate"),
@@ -902,7 +1036,7 @@ class TestStreamlitApp:
 class TestExamples:
     def test_examples_list_structure(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         assert isinstance(streamlit_app.EXAMPLES, list)
         assert len(streamlit_app.EXAMPLES) == 5
         for example in streamlit_app.EXAMPLES:
@@ -912,13 +1046,13 @@ class TestExamples:
 
     def test_text_only_examples_have_no_images(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         for example in streamlit_app.EXAMPLES[:4]:
             assert example["images"] is None
 
     def test_image_example_has_valid_paths(self):
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         image_example = streamlit_app.EXAMPLES[4]
         assert image_example["images"] is not None
         assert len(image_example["images"]) == 3
@@ -927,7 +1061,7 @@ class TestExamples:
         import os
 
         mock_model = _make_mock_model()
-        streamlit_app, _ = _reload_app(mock_model)
+        streamlit_app, _, _ = _reload_app(mock_model)
         image_example = streamlit_app.EXAMPLES[4]
         for path in image_example["images"]:
             assert os.path.exists(path), f"Missing: {path}"
