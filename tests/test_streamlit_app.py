@@ -114,27 +114,17 @@ class TestModelLoading:
 
 class TestInfer:
     def test_returns_image_and_seed(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             image, seed = streamlit_app.infer("a cat", seed=42)
             assert isinstance(image, Image.Image)
             assert seed == 42
 
-    def test_forwards_args_to_pipeline(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
+    def test_forwards_args_to_model(self):
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             streamlit_app.infer(
                 "a cat",
                 seed=123,
@@ -143,369 +133,200 @@ class TestInfer:
                 guidance_scale=3.0,
                 num_inference_steps=20,
             )
-            mock_pipe.assert_called_once_with(
+            mock_model.generate_image.assert_called_once_with(
+                seed=123,
                 prompt="a cat",
-                guidance_scale=3.0,
                 num_inference_steps=20,
                 width=768,
                 height=512,
-                generator=ANY,
+                guidance=3.0,
+                image_paths=None,
             )
 
     def test_fixed_seed(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             _, seed = streamlit_app.infer("a cat", seed=99, randomize_seed=False)
             assert seed == 99
 
     def test_randomized_seed(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             _, seed = streamlit_app.infer("a cat", seed=42, randomize_seed=True)
             assert 0 <= seed <= streamlit_app.MAX_SEED
 
-    def test_generator_uses_cpu(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-            patch("torch.Generator") as mock_gen_cls,
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
-            mock_gen = MagicMock()
-            mock_gen.manual_seed.return_value = mock_gen
-            mock_gen_cls.return_value = mock_gen
-            streamlit_app.infer("a cat", seed=42)
-            mock_gen_cls.assert_called_once_with(device="cpu")
-            mock_gen.manual_seed.assert_called_once_with(42)
-
     def test_default_params(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             streamlit_app.infer("a cat")
-            mock_pipe.assert_called_once_with(
+            mock_model.generate_image.assert_called_once_with(
+                seed=42,
                 prompt="a cat",
-                guidance_scale=1.0,
                 num_inference_steps=4,
                 width=1024,
                 height=1024,
-                generator=ANY,
+                guidance=1.0,
+                image_paths=None,
             )
 
     def test_empty_prompt(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             image, seed = streamlit_app.infer("", seed=42)
             assert isinstance(image, Image.Image)
-            mock_pipe.assert_called_once_with(
+            mock_model.generate_image.assert_called_once_with(
+                seed=42,
                 prompt="",
-                guidance_scale=1.0,
                 num_inference_steps=4,
                 width=1024,
                 height=1024,
-                generator=ANY,
+                guidance=1.0,
+                image_paths=None,
             )
 
-    def test_uses_inference_mode(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-            patch("torch.inference_mode") as mock_inference_mode,
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
-            mock_cm = MagicMock()
-            mock_inference_mode.return_value = mock_cm
-            streamlit_app.infer("a cat", seed=42)
-            mock_inference_mode.assert_called_once()
-            mock_cm.__enter__.assert_called_once()
-
-    def test_mode_selects_distilled_pipeline(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
-            streamlit_app.infer("a cat", mode="Distilled (4 steps)")
-            mock_cls.from_pretrained.assert_called_with(
-                "black-forest-labs/FLUX.2-klein-4B",
-                torch_dtype=torch.bfloat16,
-                use_safetensors=True,
-                token=streamlit_app.hf_token,
-            )
-
-    def test_mode_selects_base_pipeline(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
+    def test_mode_selects_base_defaults(self):
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             streamlit_app.infer("a cat", mode="Base (50 steps)")
-            mock_cls.from_pretrained.assert_called_with(
-                "black-forest-labs/FLUX.2-klein-base-4B",
-                torch_dtype=torch.bfloat16,
-                use_safetensors=True,
-                token=streamlit_app.hf_token,
-            )
-
-    def test_base_mode_default_steps_and_cfg(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
-            streamlit_app.infer("a cat", mode="Base (50 steps)")
-            mock_pipe.assert_called_once_with(
+            mock_model.generate_image.assert_called_once_with(
+                seed=42,
                 prompt="a cat",
-                guidance_scale=4.0,
                 num_inference_steps=50,
                 width=1024,
                 height=1024,
-                generator=ANY,
+                guidance=4.0,
+                image_paths=None,
             )
 
     def test_explicit_params_override_mode_defaults(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             streamlit_app.infer(
                 "a cat",
                 mode="Base (50 steps)",
                 guidance_scale=2.0,
                 num_inference_steps=10,
             )
-            mock_pipe.assert_called_once_with(
+            mock_model.generate_image.assert_called_once_with(
+                seed=42,
                 prompt="a cat",
-                guidance_scale=2.0,
                 num_inference_steps=10,
                 width=1024,
                 height=1024,
-                generator=ANY,
+                guidance=2.0,
+                image_paths=None,
             )
 
     def test_partial_override_steps_only(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             streamlit_app.infer(
                 "a cat",
                 mode="Base (50 steps)",
                 num_inference_steps=10,
             )
-            call_kwargs = mock_pipe.call_args[1]
+            call_kwargs = mock_model.generate_image.call_args[1]
             assert call_kwargs["num_inference_steps"] == 10
-            assert call_kwargs["guidance_scale"] == 4.0
+            assert call_kwargs["guidance"] == 4.0
 
-    def test_image_list_passed_to_pipeline(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+    def test_image_list_passed_to_model(self):
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (64, 64)), Image.new("RGB", (64, 64))]
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             streamlit_app.infer("edit this", image_list=images)
-            call_kwargs = mock_pipe.call_args[1]
-            assert call_kwargs["image"] is images
+            call_kwargs = mock_model.generate_image.call_args[1]
+            assert call_kwargs["image_paths"] is images
 
-    def test_no_image_key_when_none(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
+    def test_no_image_paths_when_none(self):
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             streamlit_app.infer("a cat")
-            call_kwargs = mock_pipe.call_args[1]
-            assert "image" not in call_kwargs
+            call_kwargs = mock_model.generate_image.call_args[1]
+            assert call_kwargs["image_paths"] is None
 
-    def test_progress_callback_passed_to_pipeline(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
+    def test_progress_callback_registered(self):
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             callback = MagicMock()
             streamlit_app.infer("a cat", progress_callback=callback)
-            call_kwargs = mock_pipe.call_args[1]
-            assert "callback_on_step_end" in call_kwargs
-            assert callable(call_kwargs["callback_on_step_end"])
+            mock_model.callbacks.register.assert_called_once()
 
     def test_no_callback_when_progress_callback_none(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             streamlit_app.infer("a cat")
-            call_kwargs = mock_pipe.call_args[1]
-            assert "callback_on_step_end" not in call_kwargs
+            mock_model.callbacks.register.assert_not_called()
 
     def test_progress_callback_invoked_with_step_and_total(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             callback = MagicMock()
             streamlit_app.infer(
                 "a cat", num_inference_steps=4, progress_callback=callback
             )
-            on_step_end = mock_pipe.call_args[1]["callback_on_step_end"]
-            # Simulate the pipeline calling the callback at step 0
-            result = on_step_end(mock_pipe, 0, 999, {"latents": None})
+            registered = mock_model.callbacks.register.call_args[0][0]
+            mock_config = MagicMock()
+            mock_config.num_inference_steps = 4
+            registered.call_in_loop(0, 42, "a cat", None, mock_config, None)
             callback.assert_called_once_with(1, 4)
-            assert isinstance(result, dict)
-
-    def test_progress_callback_returns_callback_kwargs(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
-            callback = MagicMock()
-            streamlit_app.infer("a cat", progress_callback=callback)
-            on_step_end = mock_pipe.call_args[1]["callback_on_step_end"]
-            test_kwargs = {"latents": "test_tensor"}
-            result = on_step_end(mock_pipe, 2, 500, test_kwargs)
-            assert result is test_kwargs
-
-    def test_progress_callback_with_base_mode(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
-            callback = MagicMock()
-            streamlit_app.infer(
-                "a cat", mode="Base (50 steps)", progress_callback=callback
-            )
-            on_step_end = mock_pipe.call_args[1]["callback_on_step_end"]
-            on_step_end(mock_pipe, 0, 999, {"latents": None})
-            callback.assert_called_once_with(1, 50)
 
     def test_progress_callback_step_counts_across_steps(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             callback = MagicMock()
             streamlit_app.infer(
                 "a cat", num_inference_steps=4, progress_callback=callback
             )
-            on_step_end = mock_pipe.call_args[1]["callback_on_step_end"]
+            registered = mock_model.callbacks.register.call_args[0][0]
+            mock_config = MagicMock()
+            mock_config.num_inference_steps = 4
             for step in range(4):
-                on_step_end(mock_pipe, step, 999 - step, {"latents": None})
+                registered.call_in_loop(step, 42, "a cat", None, mock_config, None)
             assert callback.call_count == 4
             callback.assert_any_call(1, 4)
             callback.assert_any_call(2, 4)
             callback.assert_any_call(3, 4)
             callback.assert_any_call(4, 4)
 
+    def test_progress_callback_with_base_mode(self):
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
+            callback = MagicMock()
+            streamlit_app.infer(
+                "a cat", mode="Base (50 steps)", progress_callback=callback
+            )
+            registered = mock_model.callbacks.register.call_args[0][0]
+            mock_config = MagicMock()
+            mock_config.num_inference_steps = 50
+            registered.call_in_loop(0, 42, "a cat", None, mock_config, None)
+            callback.assert_called_once_with(1, 50)
+
     def test_progress_callback_with_image_list(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
+        mock_model = _make_mock_model()
+        streamlit_app, _ = _reload_app(mock_model)
         images = [Image.new("RGB", (64, 64))]
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
+        with patch("streamlit_app.Flux2Klein", return_value=mock_model):
             callback = MagicMock()
             streamlit_app.infer(
                 "edit this", image_list=images, progress_callback=callback
             )
-            call_kwargs = mock_pipe.call_args[1]
-            assert call_kwargs["image"] is images
-            assert "callback_on_step_end" in call_kwargs
-
-    def test_progress_callback_with_explicit_steps(self):
-        mock_pipe = _make_mock_pipe()
-        streamlit_app, _ = _reload_app(mock_pipe)
-        with (
-            patch("streamlit_app.Flux2KleinPipeline") as mock_cls,
-            patch("torch.backends.mps.is_available", return_value=False),
-            patch("torch.cuda.is_available", return_value=False),
-        ):
-            mock_cls.from_pretrained.return_value = mock_pipe
-            callback = MagicMock()
-            streamlit_app.infer(
-                "a cat", num_inference_steps=10, progress_callback=callback
-            )
-            on_step_end = mock_pipe.call_args[1]["callback_on_step_end"]
-            on_step_end(mock_pipe, 9, 100, {"latents": None})
-            callback.assert_called_once_with(10, 10)
+            call_kwargs = mock_model.generate_image.call_args[1]
+            assert call_kwargs["image_paths"] is images
+            mock_model.callbacks.register.assert_called_once()
 
 
 class TestDimensionsFromImages:

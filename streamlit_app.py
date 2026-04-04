@@ -201,31 +201,25 @@ def infer(
     if randomize_seed:
         seed = random.randint(0, MAX_SEED)
 
-    pipe = PIPES[mode]()
-    generator = torch.Generator(device="cpu").manual_seed(seed)
-
-    pipe_kwargs = {
-        "prompt": prompt,
-        "guidance_scale": guidance_scale,
-        "num_inference_steps": num_inference_steps,
-        "width": width,
-        "height": height,
-        "generator": generator,
-    }
-
-    if image_list is not None:
-        pipe_kwargs["image"] = image_list
+    model = MODELS[mode]()
 
     if progress_callback is not None:
 
-        def _on_step_end(_pipe, step, _timestep, callback_kwargs):
-            progress_callback(step + 1, num_inference_steps)
-            return callback_kwargs
+        class _ProgressReporter:
+            def call_in_loop(self, t, seed, prompt, latents, config, time_steps):
+                progress_callback(t + 1, config.num_inference_steps)
 
-        pipe_kwargs["callback_on_step_end"] = _on_step_end
+        model.callbacks.register(_ProgressReporter())
 
-    with torch.inference_mode():
-        image = pipe(**pipe_kwargs).images[0]
+    image = model.generate_image(
+        seed=seed,
+        prompt=prompt,
+        num_inference_steps=num_inference_steps,
+        width=width,
+        height=height,
+        guidance=guidance_scale,
+        image_paths=image_list if image_list else None,
+    )
 
     return image, seed
 
