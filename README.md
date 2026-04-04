@@ -1,11 +1,12 @@
 # FLUX.2 Klein Pipeline
 
-Generate and edit images with [FLUX.2 Klein (4B)](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) from Black Forest Labs. Vision-aware prompt enhancement via [SmolVLM-500M-Instruct](https://huggingface.co/HuggingFaceTB/SmolVLM-500M-Instruct).
+Generate and edit images with [FLUX.2 Klein (4B)](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B) from Black Forest Labs. Runs natively on Apple Silicon via [mflux](https://github.com/filipstrand/mflux). Vision-aware prompt enhancement via [SmolVLM-500M-Instruct](https://huggingface.co/mlx-community/SmolVLM-500M-Instruct-bf16) powered by [mlx-vlm](https://github.com/Blaizzy/mlx-vlm).
 
 ## Features
 
 - Text-to-image generation and image editing with FLUX.2 Klein (4B parameters)
 - Two model variants: Distilled (4 steps, fast) and Base (50 steps, higher quality)
+- Native Apple Silicon performance via MLX — no PyTorch required
 - Multi-image upload for editing and compositing workflows
 - Auto-dimension: width/height sliders adjust to match uploaded image aspect ratio
 - Vision-aware prompt enhancement via SmolVLM-500M-Instruct (optional, loaded on first use)
@@ -16,17 +17,16 @@ Generate and edit images with [FLUX.2 Klein (4B)](https://huggingface.co/black-f
 
 ## Requirements
 
+- Apple Silicon Mac (M1+)
 - Python 3.12+
-- ~17.2GB RAM peak (both FLUX.2 Klein variants + SmolVLM in bfloat16)
 
 ## Setup
 
 1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/)
 2. Install dependencies: `uv sync`
-3. (Optional) Create a `.env` file with `HF_TOKEN=<your-token>` for authenticated Hugging Face access
-4. Run the application: `uv run streamlit run streamlit_app.py`
+3. Run the application: `uv run streamlit run streamlit_app.py`
 
-Models are downloaded automatically on first use (~8GB per FLUX.2 Klein variant, ~1.2GB for SmolVLM).
+Models are downloaded automatically on first use (~8GB per FLUX.2 Klein variant, ~1GB for SmolVLM).
 
 ## Testing
 
