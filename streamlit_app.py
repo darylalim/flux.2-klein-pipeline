@@ -264,11 +264,10 @@ def _clear_enhancement():
 
 
 if __name__ == "__main__":
-    st.set_page_config(page_title="FLUX.2 Klein", layout="centered")
+    st.set_page_config(page_title="AI Image Studio", layout="centered")
 
-    st.markdown(
-        "# [FLUX.2 Klein (4B)](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B)"
-    )
+    st.title("AI Image Studio")
+    st.caption("Powered by [FLUX.2 Klein](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B)")
 
     prompt = st.text_input(
         "Prompt", placeholder="Enter your prompt", key="prompt_input"
